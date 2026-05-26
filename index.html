@@ -4,7 +4,334 @@
 <meta charset="UTF-8">
 <title>IMC Banner Editor</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,600;0,700;0,800;0,900;1,800;1,900&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js">
+// ── LANGUAGE GROUPS ───────────────────────────────────────────────────────────
+// Maps CSV language values → canonical filename lang code
+const LANG_GROUPS = {
+  'NA':                        'EN',
+  'UK (proofread)':            'EN',
+  'AE (proofread)':            'EN',
+  'IE (proofread)':            'EN',
+  'AU WINTER 2026 (proofread)':'EN',
+  'FR (proofread)':            'FR',
+  'BEFR - (proofread)':        'FR',
+  'ES (proofread)':            'ES',
+  'DE (proofread)':            'DE',
+  'PL (proofread)':            'PL',
+  'NL (proofread)':            'NL',
+  'BENL - (proofread)':        'NL',
+};
+
+// Get unique header langs — one per canonical code, first match wins
+function getUniqueHeaderLangs() {
+  if (!csvStore.hdr.length) return [];
+  const keyCol = Object.keys(csvStore.hdr[0]).find(k=>k==='language'||k==='lang') || Object.keys(csvStore.hdr[0])[0];
+  const seen = new Set();
+  const result = [];
+  for (const row of csvStore.hdr) {
+    const rawLang = row[keyCol];
+    const canon = LANG_GROUPS[rawLang] || cleanLang(rawLang);
+    if (!seen.has(canon)) {
+      seen.add(canon);
+      result.push({ rawLang, canon, row });
+    }
+  }
+  return result;
+}
+
+// Get all stats langs (one per row)
+function getAllStatsLangs() {
+  if (!csvStore.stats.length) return [];
+  const keyCol = Object.keys(csvStore.stats[0]).find(k=>k==='language'||k==='lang') || Object.keys(csvStore.stats[0])[0];
+  return csvStore.stats.map(row => ({
+    rawLang: row[keyCol],
+    canon: LANG_GROUPS[row[keyCol]] || cleanLang(row[keyCol]),
+    row
+  }));
+}
+
+function setProgress(msg) {
+  const el = gi('batch-progress');
+  el.style.display = 'block';
+  el.textContent = msg;
+}
+
+function hideProgress() {
+  gi('batch-progress').style.display = 'none';
+}
+
+// Apply a header CSV row to the banner fields
+function applyHdrRow(row) {
+  gi('t-line1').value = row.line1 || '';
+  gi('t-line2').value = row.line2 || '';
+  gi('t-line3').value = row.line3 || '';
+  gi('t-line4').value = row.line4 || '';
+  renderBanners();
+}
+
+// Apply a stats CSV row to the banner fields
+function applyStatsRow(row) {
+  gi('s-headline').value = row.headline || '';
+  gi('s-n1').value = row.n1 || ''; gi('s-l1').value = row.l1 || '';
+  gi('s-n2').value = row.n2 || ''; gi('s-l2').value = row.l2 || '';
+  gi('s-n3').value = row.n3 || ''; gi('s-l3').value = row.l3 || '';
+  gi('s-source').value = row.source || '';
+  renderBanners();
+}
+
+async function captureCanvas(elId, w, h) {
+  const el = gi(elId);
+  const canvas = await html2canvas(el, {
+    scale: 2, useCORS: true, allowTaint: true,
+    backgroundColor: null, logging: false,
+    width: el.offsetWidth, height: el.offsetHeight,
+  });
+  if (w && h && (w !== el.offsetWidth || h !== el.offsetHeight)) {
+    const final = document.createElement('canvas');
+    final.width = w; final.height = h;
+    final.getContext('2d').drawImage(canvas, 0, 0, w, h);
+    return final;
+  }
+  return canvas;
+}
+
+async function batchExportAll() {
+  const hdrLangs = getUniqueHeaderLangs();
+  const statsLangs = getAllStatsLangs();
+
+  if (!hdrLangs.length && !statsLangs.length) {
+    showToast('⚠ Load CSV files first', '#ff6b6b'); return;
+  }
+
+  const btn = gi('btn-batch-all');
+  btn.textContent = 'Working...'; btn.classList.add('loading');
+
+  const zip = new JSZip();
+  const send = (gv('fn-send') || 'Send1').trim();
+  const cat = CAT_CODES[gv('t-category')] || 'HGN';
+
+  // Save current field values to restore later
+  const snapshot = {};
+  FIELD_IDS.forEach(id => { const el = gi(id); if(el) snapshot[id] = el.value; });
+
+  let total = hdrLangs.length * 2 + statsLangs.length;
+  let done = 0;
+
+  // ── HEADER BANNERS ──────────────────────────────────────────────────────────
+  for (const { rawLang, canon, row } of hdrLangs) {
+    applyHdrRow(row);
+    await new Promise(r => setTimeout(r, 120)); // let DOM settle
+
+    setProgress(`Header ${canon} (${done+1}/${total})...`);
+
+    // 600×300
+    const c1 = await captureCanvas('preview-header');
+    zip.file(`600x300-HeaderBanner-${cat}-${send}-${canon}.png`, c1.toDataURL('image/png').split(',')[1], {base64:true});
+    done++;
+
+    // 480×250
+    setProgress(`Header ${canon} 480×250 (${done+1}/${total})...`);
+    const c2 = await captureCanvas('preview-header', 480, 250);
+    zip.file(`480x250-HeaderBanner-${cat}-${send}-${canon}.png`, c2.toDataURL('image/png').split(',')[1], {base64:true});
+    done++;
+  }
+
+  // ── STATS BANNERS ───────────────────────────────────────────────────────────
+  for (const { rawLang, canon, row } of statsLangs) {
+    applyStatsRow(row);
+    await new Promise(r => setTimeout(r, 120));
+
+    const statsLang = LANG_GROUPS[rawLang] || cleanLang(rawLang);
+    setProgress(`Stats ${statsLang} (${done+1}/${total})...`);
+
+    const c3 = await captureCanvas('preview-stats', 480, 145);
+    zip.file(`480x145-StatsBanner-${send}-${statsLang}.png`, c3.toDataURL('image/png').split(',')[1], {base64:true});
+    done++;
+  }
+
+  // Restore original fields
+  FIELD_IDS.forEach(id => { const el = gi(id); if(el && snapshot[id] !== undefined) el.value = snapshot[id]; });
+  renderBanners();
+
+  // Generate ZIP
+  setProgress('Zipping files...');
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const link = document.createElement('a');
+  link.download = `imc-banners-${send}-${Date.now()}.zip`;
+  link.href = URL.createObjectURL(blob);
+  link.click();
+
+  hideProgress();
+  btn.textContent = '↓ Download All (ZIP)';
+  btn.classList.remove('loading');
+  showToast(`✓ ${done} banners exported`, '#4ade80');
+}
+
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js">
+// ── LANGUAGE GROUPS ───────────────────────────────────────────────────────────
+// Maps CSV language values → canonical filename lang code
+const LANG_GROUPS = {
+  'NA':                        'EN',
+  'UK (proofread)':            'EN',
+  'AE (proofread)':            'EN',
+  'IE (proofread)':            'EN',
+  'AU WINTER 2026 (proofread)':'EN',
+  'FR (proofread)':            'FR',
+  'BEFR - (proofread)':        'FR',
+  'ES (proofread)':            'ES',
+  'DE (proofread)':            'DE',
+  'PL (proofread)':            'PL',
+  'NL (proofread)':            'NL',
+  'BENL - (proofread)':        'NL',
+};
+
+// Get unique header langs — one per canonical code, first match wins
+function getUniqueHeaderLangs() {
+  if (!csvStore.hdr.length) return [];
+  const keyCol = Object.keys(csvStore.hdr[0]).find(k=>k==='language'||k==='lang') || Object.keys(csvStore.hdr[0])[0];
+  const seen = new Set();
+  const result = [];
+  for (const row of csvStore.hdr) {
+    const rawLang = row[keyCol];
+    const canon = LANG_GROUPS[rawLang] || cleanLang(rawLang);
+    if (!seen.has(canon)) {
+      seen.add(canon);
+      result.push({ rawLang, canon, row });
+    }
+  }
+  return result;
+}
+
+// Get all stats langs (one per row)
+function getAllStatsLangs() {
+  if (!csvStore.stats.length) return [];
+  const keyCol = Object.keys(csvStore.stats[0]).find(k=>k==='language'||k==='lang') || Object.keys(csvStore.stats[0])[0];
+  return csvStore.stats.map(row => ({
+    rawLang: row[keyCol],
+    canon: LANG_GROUPS[row[keyCol]] || cleanLang(row[keyCol]),
+    row
+  }));
+}
+
+function setProgress(msg) {
+  const el = gi('batch-progress');
+  el.style.display = 'block';
+  el.textContent = msg;
+}
+
+function hideProgress() {
+  gi('batch-progress').style.display = 'none';
+}
+
+// Apply a header CSV row to the banner fields
+function applyHdrRow(row) {
+  gi('t-line1').value = row.line1 || '';
+  gi('t-line2').value = row.line2 || '';
+  gi('t-line3').value = row.line3 || '';
+  gi('t-line4').value = row.line4 || '';
+  renderBanners();
+}
+
+// Apply a stats CSV row to the banner fields
+function applyStatsRow(row) {
+  gi('s-headline').value = row.headline || '';
+  gi('s-n1').value = row.n1 || ''; gi('s-l1').value = row.l1 || '';
+  gi('s-n2').value = row.n2 || ''; gi('s-l2').value = row.l2 || '';
+  gi('s-n3').value = row.n3 || ''; gi('s-l3').value = row.l3 || '';
+  gi('s-source').value = row.source || '';
+  renderBanners();
+}
+
+async function captureCanvas(elId, w, h) {
+  const el = gi(elId);
+  const canvas = await html2canvas(el, {
+    scale: 2, useCORS: true, allowTaint: true,
+    backgroundColor: null, logging: false,
+    width: el.offsetWidth, height: el.offsetHeight,
+  });
+  if (w && h && (w !== el.offsetWidth || h !== el.offsetHeight)) {
+    const final = document.createElement('canvas');
+    final.width = w; final.height = h;
+    final.getContext('2d').drawImage(canvas, 0, 0, w, h);
+    return final;
+  }
+  return canvas;
+}
+
+async function batchExportAll() {
+  const hdrLangs = getUniqueHeaderLangs();
+  const statsLangs = getAllStatsLangs();
+
+  if (!hdrLangs.length && !statsLangs.length) {
+    showToast('⚠ Load CSV files first', '#ff6b6b'); return;
+  }
+
+  const btn = gi('btn-batch-all');
+  btn.textContent = 'Working...'; btn.classList.add('loading');
+
+  const zip = new JSZip();
+  const send = (gv('fn-send') || 'Send1').trim();
+  const cat = CAT_CODES[gv('t-category')] || 'HGN';
+
+  // Save current field values to restore later
+  const snapshot = {};
+  FIELD_IDS.forEach(id => { const el = gi(id); if(el) snapshot[id] = el.value; });
+
+  let total = hdrLangs.length * 2 + statsLangs.length;
+  let done = 0;
+
+  // ── HEADER BANNERS ──────────────────────────────────────────────────────────
+  for (const { rawLang, canon, row } of hdrLangs) {
+    applyHdrRow(row);
+    await new Promise(r => setTimeout(r, 120)); // let DOM settle
+
+    setProgress(`Header ${canon} (${done+1}/${total})...`);
+
+    // 600×300
+    const c1 = await captureCanvas('preview-header');
+    zip.file(`600x300-HeaderBanner-${cat}-${send}-${canon}.png`, c1.toDataURL('image/png').split(',')[1], {base64:true});
+    done++;
+
+    // 480×250
+    setProgress(`Header ${canon} 480×250 (${done+1}/${total})...`);
+    const c2 = await captureCanvas('preview-header', 480, 250);
+    zip.file(`480x250-HeaderBanner-${cat}-${send}-${canon}.png`, c2.toDataURL('image/png').split(',')[1], {base64:true});
+    done++;
+  }
+
+  // ── STATS BANNERS ───────────────────────────────────────────────────────────
+  for (const { rawLang, canon, row } of statsLangs) {
+    applyStatsRow(row);
+    await new Promise(r => setTimeout(r, 120));
+
+    const statsLang = LANG_GROUPS[rawLang] || cleanLang(rawLang);
+    setProgress(`Stats ${statsLang} (${done+1}/${total})...`);
+
+    const c3 = await captureCanvas('preview-stats', 480, 145);
+    zip.file(`480x145-StatsBanner-${send}-${statsLang}.png`, c3.toDataURL('image/png').split(',')[1], {base64:true});
+    done++;
+  }
+
+  // Restore original fields
+  FIELD_IDS.forEach(id => { const el = gi(id); if(el && snapshot[id] !== undefined) el.value = snapshot[id]; });
+  renderBanners();
+
+  // Generate ZIP
+  setProgress('Zipping files...');
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const link = document.createElement('a');
+  link.download = `imc-banners-${send}-${Date.now()}.zip`;
+  link.href = URL.createObjectURL(blob);
+  link.click();
+
+  hideProgress();
+  btn.textContent = '↓ Download All (ZIP)';
+  btn.classList.remove('loading');
+  showToast(`✓ ${done} banners exported`, '#4ade80');
+}
+
+</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{--bg:#1a1a1f;--surface:#242429;--surface2:#2e2e35;--border:rgba(255,255,255,0.08);--text:#f0f0f0;--text-muted:#888;--text-dim:#555;--radius:10px;--accent:#EF7100;}
@@ -120,6 +447,7 @@ body{background:var(--bg);color:var(--text);font-family:'Montserrat',Arial,sans-
         <button class="btn-sm green" onclick="downloadSession()">↓ Download</button>
         <div class="btn-sm blue btn-sm-upload">↑ Load File<input type="file" accept=".json" onchange="loadSessionFile(this.files[0])"></div>
       </div>
+      <button class="btn-sm" onclick="clearLocalStorage()" style="border-color:#ff6b6b;color:#ff6b6b;font-size:9px;">✕ Clear saved state</button>
     </div>
   </div>
 
@@ -278,9 +606,14 @@ body{background:var(--bg);color:var(--text);font-family:'Montserrat',Arial,sans-
       </div>
     </div>
     <div style="display:flex;flex-direction:column;gap:8px;">
-      <button class="btn-export" id="btn-export-header" onclick="exportBanner('header')">↓ Export Header (600×300)</button>
-      <button class="btn-export" id="btn-export-header-small" onclick="exportBanner('header-small')" style="background:linear-gradient(135deg,#b35000,#cc8800);color:#fff;">↓ Export Header (480×250)</button>
-      <button class="btn-export" id="btn-export-stats" onclick="exportBanner('stats')" style="background:linear-gradient(135deg,#0D47A1,#00ACC1);color:#fff;">↓ Export Stats (480×145)</button>
+      <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);">Individual</div>
+      <button class="btn-export" id="btn-export-header" onclick="exportBanner('header')">↓ Header (600×300)</button>
+      <button class="btn-export" id="btn-export-header-small" onclick="exportBanner('header-small')" style="background:linear-gradient(135deg,#b35000,#cc8800);color:#fff;">↓ Header (480×250)</button>
+      <button class="btn-export" id="btn-export-stats" onclick="exportBanner('stats')" style="background:linear-gradient(135deg,#0D47A1,#00ACC1);color:#fff;">↓ Stats (480×145)</button>
+      <div style="height:1px;background:var(--border);margin:4px 0;"></div>
+      <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);">Batch — all languages</div>
+      <div id="batch-progress" style="display:none;padding:8px 10px;background:var(--bg);border-radius:6px;border:1px solid var(--border);font-size:10px;font-weight:700;color:var(--accent);">Preparing...</div>
+      <button class="btn-export" id="btn-batch-all" onclick="batchExportAll()" style="background:linear-gradient(135deg,#1a6b1a,#2ecc40);color:#fff;">↓ Download All (ZIP)</button>
     </div>
   </div>
 
@@ -437,8 +770,20 @@ const PRESETS = {
 };
 
 const CAT_IMGS = {
-  summer:{beauty:'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=900&auto=format&q=80',food:'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=900&auto=format&q=80',leisure:'https://images.unsplash.com/photo-1533107862482-0e6974b06ec4?w=900&auto=format&q=80',services:'https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=900&auto=format&q=80',general:'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=900&auto=format&q=80'},
-  winter:{beauty:'https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=900&auto=format&q=80',food:'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?w=900&auto=format&q=80',leisure:'https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=900&auto=format&q=80',services:'https://images.unsplash.com/photo-1484154218962-a197022b5858?w=900&auto=format&q=80',general:'https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=900&auto=format&q=80'},
+  summer:{
+    beauty:  'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=900&auto=format&q=80',
+    food:    'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=900&auto=format&q=80',
+    leisure: 'https://images.unsplash.com/photo-1533107862482-0e6974b06ec4?w=900&auto=format&q=80',
+    services:'https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=900&auto=format&q=80',
+    general: 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=900&auto=format&q=80',
+  },
+  winter:{
+    beauty:  'https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=900&auto=format&q=80',
+    food:    'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?w=900&auto=format&q=80',
+    leisure: 'https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=900&auto=format&q=80',
+    services:'https://images.unsplash.com/photo-1484154218962-a197022b5858?w=900&auto=format&q=80',
+    general: 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=900&auto=format&q=80',
+  }
 };
 const CAT_CODES = {beauty:'HBW',food:'HFD',leisure:'HTD',services:'HSV',general:'HGN',custom:'HCU'};
 
@@ -492,9 +837,7 @@ function switchMode(m) {
   saveCombo();
   mode = m;
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',(m==='summer'&&i===0)||(m==='winter'&&i===1)));
-  const key = comboKey();
-  if(stateStore[key]) { loadCombo(key); }
-  else { applyPreset(m); }
+  applyPreset(m);
   syncStatsMTColors();
   renderBanners(); updateFilename();
 }
@@ -503,7 +846,7 @@ function applyPreset(m) {
   const p=PRESETS[m];
   gi('t-line1').value=p.line1;gi('t-line2').value=p.line2;gi('t-line3').value=p.line3;gi('t-line4').value=p.line4;
   gi('c-grad1').value=p.grad1;gi('c-grad2').value=p.grad2;gi('c-accent').value=p.accent;gi('t-bgcolor').value=p.bgcolor;
-  gi('t-category').value='beauty';gi('t-imgurl').value=CAT_IMGS[m].beauty;
+  gi('t-category').value='beauty';gi('t-imgurl').value=CAT_IMGS[m]['beauty'];
   gi('img-pos-x').value=50;gi('img-pos-y').value=50;gi('img-scale-w').value=100;gi('img-scale-h').value=100;
   ['img-pos-x','img-pos-y','img-scale-w','img-scale-h'].forEach(syncNum);
   gi('fade-start').value=38;gi('fade-end').value=78;gi('fade-opacity').value=100;
@@ -512,11 +855,12 @@ function applyPreset(m) {
 }
 
 function selectCategory() {
-  saveCombo();
   const cat=gv('t-category');
-  const key=comboKey();
-  if(stateStore[key]) { loadCombo(key); renderBanners(); updateFilename(); return; }
-  if(cat!=='custom') { gi('t-imgurl').value=CAT_IMGS[mode][cat]; gi('img-pos-x').value=50;gi('img-pos-y').value=50;syncNum('img-pos-x');syncNum('img-pos-y'); }
+  if(cat!=='custom') {
+    gi('t-imgurl').value=CAT_IMGS[mode][cat]||'';
+    gi('img-pos-x').value=50; gi('img-pos-y').value=50;
+    syncNum('img-pos-x'); syncNum('img-pos-y');
+  }
   renderBanners(); saveCombo(); updateFilename();
 }
 
@@ -699,6 +1043,17 @@ function loadSessionFile(file){
   r.readAsText(file);
 }
 
+// ── CLEAR LOCAL STORAGE ──────────────────────────────────────────────────────
+function clearLocalStorage(){
+  if(!confirm('Clear all saved states? This cannot be undone.')) return;
+  localStorage.removeItem('imc_state');
+  stateStore={};
+  applyPreset(mode);
+  renderBanners();
+  updateFilename();
+  showToast('✓ Saved state cleared','#4ade80');
+}
+
 // ── LOCAL STORAGE RESTORE ─────────────────────────────────────────────────────
 function restoreLocal(){
   try{
@@ -719,13 +1074,177 @@ function restoreLocal(){
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 (function init(){
-  const restored=restoreLocal();
-  if(!restored) applyPreset('summer');
+  // Clear any corrupted localStorage state
+  localStorage.removeItem('imc_state');
+  stateStore={};
+  applyPreset('summer');
   syncStatsMTColors();
   renderBanners();
-  if(restored) reapplyMoreTools();
   updateFilename();
 })();
+
+// ── LANGUAGE GROUPS ───────────────────────────────────────────────────────────
+// Maps CSV language values → canonical filename lang code
+const LANG_GROUPS = {
+  'NA':                        'EN',
+  'UK (proofread)':            'EN',
+  'AE (proofread)':            'EN',
+  'IE (proofread)':            'EN',
+  'AU WINTER 2026 (proofread)':'EN',
+  'FR (proofread)':            'FR',
+  'BEFR - (proofread)':        'FR',
+  'ES (proofread)':            'ES',
+  'DE (proofread)':            'DE',
+  'PL (proofread)':            'PL',
+  'NL (proofread)':            'NL',
+  'BENL - (proofread)':        'NL',
+};
+
+// Get unique header langs — one per canonical code, first match wins
+function getUniqueHeaderLangs() {
+  if (!csvStore.hdr.length) return [];
+  const keyCol = Object.keys(csvStore.hdr[0]).find(k=>k==='language'||k==='lang') || Object.keys(csvStore.hdr[0])[0];
+  const seen = new Set();
+  const result = [];
+  for (const row of csvStore.hdr) {
+    const rawLang = row[keyCol];
+    const canon = LANG_GROUPS[rawLang] || cleanLang(rawLang);
+    if (!seen.has(canon)) {
+      seen.add(canon);
+      result.push({ rawLang, canon, row });
+    }
+  }
+  return result;
+}
+
+// Get all stats langs (one per row)
+function getAllStatsLangs() {
+  if (!csvStore.stats.length) return [];
+  const keyCol = Object.keys(csvStore.stats[0]).find(k=>k==='language'||k==='lang') || Object.keys(csvStore.stats[0])[0];
+  return csvStore.stats.map(row => ({
+    rawLang: row[keyCol],
+    canon: LANG_GROUPS[row[keyCol]] || cleanLang(row[keyCol]),
+    row
+  }));
+}
+
+function setProgress(msg) {
+  const el = gi('batch-progress');
+  el.style.display = 'block';
+  el.textContent = msg;
+}
+
+function hideProgress() {
+  gi('batch-progress').style.display = 'none';
+}
+
+// Apply a header CSV row to the banner fields
+function applyHdrRow(row) {
+  gi('t-line1').value = row.line1 || '';
+  gi('t-line2').value = row.line2 || '';
+  gi('t-line3').value = row.line3 || '';
+  gi('t-line4').value = row.line4 || '';
+  renderBanners();
+}
+
+// Apply a stats CSV row to the banner fields
+function applyStatsRow(row) {
+  gi('s-headline').value = row.headline || '';
+  gi('s-n1').value = row.n1 || ''; gi('s-l1').value = row.l1 || '';
+  gi('s-n2').value = row.n2 || ''; gi('s-l2').value = row.l2 || '';
+  gi('s-n3').value = row.n3 || ''; gi('s-l3').value = row.l3 || '';
+  gi('s-source').value = row.source || '';
+  renderBanners();
+}
+
+async function captureCanvas(elId, w, h) {
+  const el = gi(elId);
+  const canvas = await html2canvas(el, {
+    scale: 2, useCORS: true, allowTaint: true,
+    backgroundColor: null, logging: false,
+    width: el.offsetWidth, height: el.offsetHeight,
+  });
+  if (w && h && (w !== el.offsetWidth || h !== el.offsetHeight)) {
+    const final = document.createElement('canvas');
+    final.width = w; final.height = h;
+    final.getContext('2d').drawImage(canvas, 0, 0, w, h);
+    return final;
+  }
+  return canvas;
+}
+
+async function batchExportAll() {
+  const hdrLangs = getUniqueHeaderLangs();
+  const statsLangs = getAllStatsLangs();
+
+  if (!hdrLangs.length && !statsLangs.length) {
+    showToast('⚠ Load CSV files first', '#ff6b6b'); return;
+  }
+
+  const btn = gi('btn-batch-all');
+  btn.textContent = 'Working...'; btn.classList.add('loading');
+
+  const zip = new JSZip();
+  const send = (gv('fn-send') || 'Send1').trim();
+  const cat = CAT_CODES[gv('t-category')] || 'HGN';
+
+  // Save current field values to restore later
+  const snapshot = {};
+  FIELD_IDS.forEach(id => { const el = gi(id); if(el) snapshot[id] = el.value; });
+
+  let total = hdrLangs.length * 2 + statsLangs.length;
+  let done = 0;
+
+  // ── HEADER BANNERS ──────────────────────────────────────────────────────────
+  for (const { rawLang, canon, row } of hdrLangs) {
+    applyHdrRow(row);
+    await new Promise(r => setTimeout(r, 120)); // let DOM settle
+
+    setProgress(`Header ${canon} (${done+1}/${total})...`);
+
+    // 600×300
+    const c1 = await captureCanvas('preview-header');
+    zip.file(`600x300-HeaderBanner-${cat}-${send}-${canon}.png`, c1.toDataURL('image/png').split(',')[1], {base64:true});
+    done++;
+
+    // 480×250
+    setProgress(`Header ${canon} 480×250 (${done+1}/${total})...`);
+    const c2 = await captureCanvas('preview-header', 480, 250);
+    zip.file(`480x250-HeaderBanner-${cat}-${send}-${canon}.png`, c2.toDataURL('image/png').split(',')[1], {base64:true});
+    done++;
+  }
+
+  // ── STATS BANNERS ───────────────────────────────────────────────────────────
+  for (const { rawLang, canon, row } of statsLangs) {
+    applyStatsRow(row);
+    await new Promise(r => setTimeout(r, 120));
+
+    const statsLang = LANG_GROUPS[rawLang] || cleanLang(rawLang);
+    setProgress(`Stats ${statsLang} (${done+1}/${total})...`);
+
+    const c3 = await captureCanvas('preview-stats', 480, 145);
+    zip.file(`480x145-StatsBanner-${send}-${statsLang}.png`, c3.toDataURL('image/png').split(',')[1], {base64:true});
+    done++;
+  }
+
+  // Restore original fields
+  FIELD_IDS.forEach(id => { const el = gi(id); if(el && snapshot[id] !== undefined) el.value = snapshot[id]; });
+  renderBanners();
+
+  // Generate ZIP
+  setProgress('Zipping files...');
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const link = document.createElement('a');
+  link.download = `imc-banners-${send}-${Date.now()}.zip`;
+  link.href = URL.createObjectURL(blob);
+  link.click();
+
+  hideProgress();
+  btn.textContent = '↓ Download All (ZIP)';
+  btn.classList.remove('loading');
+  showToast(`✓ ${done} banners exported`, '#4ade80');
+}
+
 </script>
 </body>
 </html>
