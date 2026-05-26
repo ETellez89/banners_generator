@@ -728,7 +728,7 @@ function loadCombo(key) {
 
 function persistLocal() {
   try {
-    localStorage.setItem('imc_state', JSON.stringify({ mode, stateStore, csvStore }));
+    localStorage.setItem('imc_state', JSON.stringify({ version2:true, mode, stateStore, csvStore }));
   } catch(e) {}
 }
 
@@ -856,10 +856,22 @@ function applyPreset(m) {
 
 function selectCategory() {
   const cat=gv('t-category');
+  const key=comboKey();
+  if(stateStore[key]) {
+    // Restore saved state for this category combo
+    loadCombo(key);
+    renderBanners();
+    reapplyMoreTools();
+    updateFilename();
+    return;
+  }
+  // No saved state — load default image, reset position
   if(cat!=='custom') {
     gi('t-imgurl').value=CAT_IMGS[mode][cat]||'';
     gi('img-pos-x').value=50; gi('img-pos-y').value=50;
+    gi('img-scale-w').value=100; gi('img-scale-h').value=100;
     syncNum('img-pos-x'); syncNum('img-pos-y');
+    syncNum('img-scale-w'); syncNum('img-scale-h');
   }
   renderBanners(); saveCombo(); updateFilename();
 }
@@ -868,6 +880,7 @@ function onImgUrlChange(){ gi('t-category').value='custom'; onFieldChange(); }
 
 // ── IMAGE ─────────────────────────────────────────────────────────────────────
 function updateImagePosition() {
+  saveCombo();
   const xRaw=parseInt(gv('img-pos-x')),yRaw=parseInt(gv('img-pos-y'));
   const img=gi('hb-img'),banner=gi('preview-header');
   const bw=banner.offsetWidth,bh=banner.offsetHeight;
@@ -1049,6 +1062,7 @@ function clearLocalStorage(){
   localStorage.removeItem('imc_state');
   stateStore={};
   applyPreset(mode);
+  syncStatsMTColors();
   renderBanners();
   updateFilename();
   showToast('✓ Saved state cleared','#4ade80');
@@ -1060,6 +1074,7 @@ function restoreLocal(){
     const raw=localStorage.getItem('imc_state');
     if(!raw)return false;
     const d=JSON.parse(raw);
+    if(!d.version2) return false; // reject old corrupted state
     stateStore=d.stateStore||{};
     csvStore=d.csvStore||{hdr:[],stats:[]};
     ['hdr','stats'].forEach(type=>{if(csvStore[type]&&csvStore[type].length)renderCsvPicker(type);});
@@ -1074,12 +1089,12 @@ function restoreLocal(){
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 (function init(){
-  // Clear any corrupted localStorage state
-  localStorage.removeItem('imc_state');
-  stateStore={};
-  applyPreset('summer');
+  // Try to restore from localStorage
+  const restored = restoreLocal();
+  if(!restored) applyPreset('summer');
   syncStatsMTColors();
   renderBanners();
+  if(restored) reapplyMoreTools();
   updateFilename();
 })();
 
