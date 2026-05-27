@@ -544,6 +544,12 @@ body{background:var(--bg);color:var(--text);font-family:'Montserrat',Arial,sans-
       <div class="field"><label>Fade start %</label><div class="srow"><input type="range" min="10" max="80" step="1" id="fade-start" value="38" oninput="syncNum('fade-start');updateFade()"><input type="number" id="fade-start-n" value="38" min="10" max="80" oninput="syncRange('fade-start');updateFade()"></div></div>
       <div class="field"><label>Fade end %</label><div class="srow"><input type="range" min="20" max="100" step="1" id="fade-end" value="78" oninput="syncNum('fade-end');updateFade()"><input type="number" id="fade-end-n" value="78" min="20" max="100" oninput="syncRange('fade-end');updateFade()"></div></div>
       <div class="field"><label>Solid opacity %</label><div class="srow"><input type="range" min="50" max="100" step="1" id="fade-opacity" value="100" oninput="syncNum('fade-opacity');updateFade()"><input type="number" id="fade-opacity-n" value="100" min="50" max="100" oninput="syncRange('fade-opacity');updateFade()"></div></div>
+      <div style="height:1px;background:var(--border);margin:2px 0;"></div>
+      <div style="font-size:9px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:2px;">Diagonal line</div>
+      <div class="field"><label>Position X (px from right)</label><div class="srow"><input type="range" min="-100" max="400" step="1" id="diag-pos" value="170" oninput="syncNum('diag-pos');updateDiagonal()"><input type="number" id="diag-pos-n" value="170" min="-100" max="400" oninput="syncRange('diag-pos');updateDiagonal()"></div></div>
+      <div class="field"><label>Angle (degrees)</label><div class="srow"><input type="range" min="0" max="180" step="1" id="diag-angle" value="14" oninput="syncNum('diag-angle');updateDiagonal()"><input type="number" id="diag-angle-n" value="14" min="0" max="180" oninput="syncRange('diag-angle');updateDiagonal()"></div></div>
+      <div class="field"><label>Width (px)</label><div class="srow"><input type="range" min="4" max="80" step="1" id="diag-width" value="26" oninput="syncNum('diag-width');updateDiagonal()"><input type="number" id="diag-width-n" value="26" min="4" max="80" oninput="syncRange('diag-width');updateDiagonal()"></div></div>
+      <div class="field"><label>Gap between lines (px)</label><div class="srow"><input type="range" min="0" max="60" step="1" id="diag-gap" value="24" oninput="syncNum('diag-gap');updateDiagonal()"><input type="number" id="diag-gap-n" value="24" min="0" max="60" oninput="syncRange('diag-gap');updateDiagonal()"></div></div>
     </div>
   </div>
 
@@ -675,7 +681,7 @@ const FIELD_IDS = [
   'c-grad1','c-grad2','c-accent','t-bgcolor',
   't-category','t-imgurl',
   'img-pos-x','img-pos-y','img-scale-w','img-scale-h',
-  'fade-start','fade-end','fade-opacity',
+  'fade-start','fade-end','fade-opacity','diag-pos','diag-angle','diag-width','diag-gap',
   's-headline','s-n1','s-l1','s-n2','s-l2','s-n3','s-l3','s-source',
   'mt-fs1','mt-fs2','mt-fs3','mt-fs4',
   'mt-vgap','mt-padl','mt-panelw','mt-textop','mt-diag1','mt-diag2',
@@ -712,7 +718,7 @@ function loadCombo(key) {
   });
   // Sync number inputs
   ['img-pos-x','img-pos-y','img-scale-w','img-scale-h',
-   'fade-start','fade-end','fade-opacity',
+   'fade-start','fade-end','fade-opacity','diag-pos','diag-angle','diag-width','diag-gap',
    'mt-fs1','mt-fs2','mt-fs3','mt-fs4',
    'mt-vgap','mt-padl','mt-panelw','mt-textop','mt-diag1','mt-diag2',
    'smt-fshl','smt-fsnum','smt-fslbl','smt-gap','smt-vpad'
@@ -926,6 +932,24 @@ function updateFade(){
   saveCombo();
 }
 
+// ── DIAGONAL ─────────────────────────────────────────────────────────────────
+function updateDiagonal() {
+  const pos   = parseInt(gv('diag-pos'));
+  const angle = parseInt(gv('diag-angle'));
+  const width = parseInt(gv('diag-width'));
+  const gap   = parseInt(gv('diag-gap'));
+  const d1 = gi('hb-diag-1');
+  const d2 = gi('hb-diag-2');
+  // Position: right offset for line 1, line 2 is gap px further right
+  d1.style.right  = pos + 'px';
+  d2.style.right  = (pos - gap) + 'px';
+  d1.style.width  = width + 'px';
+  d2.style.width  = Math.round(width * 0.65) + 'px';
+  d1.style.transform = `rotate(${angle}deg)`;
+  d2.style.transform = `rotate(${angle}deg)`;
+  saveCombo();
+}
+
 // ── RENDER ────────────────────────────────────────────────────────────────────
 function renderBanners(){
   // Header bg color
@@ -952,6 +976,7 @@ function renderBanners(){
     gi('sb-l'+n).textContent=gv('s-l'+n);
   });
   gi('sb-source').textContent=gv('s-source');
+  updateDiagonal();
 }
 
 // ── MORE TOOLS ────────────────────────────────────────────────────────────────
