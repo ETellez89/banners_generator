@@ -16,7 +16,1296 @@ const LANG_GROUPS = {
   'FR (proofread)':            'FR',
   'BEFR - (proofread)':        'FR',
   'ES (proofread)':            'ES',
+  'DE (proofread)':            'DE',<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>IMC Banner Editor</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,600;0,700;0,800;0,900;1,800;1,900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js">
+// ── LANGUAGE GROUPS ───────────────────────────────────────────────────────────
+// Maps CSV language values → canonical filename lang code
+const LANG_GROUPS = {
+  'NA':                        'EN',
+  'UK (proofread)':            'EN',
+  'AE (proofread)':            'EN',
+  'IE (proofread)':            'EN',
+  'AU WINTER 2026 (proofread)':'EN',
+  'FR (proofread)':            'FR',
+  'BEFR - (proofread)':        'FR',
+  'ES (proofread)':            'ES',
   'DE (proofread)':            'DE',
+  'PL (proofread)':            'PL',
+  'NL (proofread)':            'NL',
+  'BENL - (proofread)':        'NL',
+};
+
+// Get unique header langs — one per canonical code, first match wins
+function getUniqueHeaderLangs() {
+  if (!csvStore.hdr.length) return [];
+  const keyCol = Object.keys(csvStore.hdr[0]).find(k=>k==='language'||k==='lang') || Object.keys(csvStore.hdr[0])[0];
+  const seen = new Set();
+  const result = [];
+  for (const row of csvStore.hdr) {
+    const rawLang = row[keyCol];
+    const canon = LANG_GROUPS[rawLang] || cleanLang(rawLang);
+    if (!seen.has(canon)) {
+      seen.add(canon);
+      result.push({ rawLang, canon, row });
+    }
+  }
+  return result;
+}
+
+// Get all stats langs (one per row)
+function getAllStatsLangs() {
+  if (!csvStore.stats.length) return [];
+  const keyCol = Object.keys(csvStore.stats[0]).find(k=>k==='language'||k==='lang') || Object.keys(csvStore.stats[0])[0];
+  return csvStore.stats.map(row => ({
+    rawLang: row[keyCol],
+    canon: LANG_GROUPS[row[keyCol]] || cleanLang(row[keyCol]),
+    row
+  }));
+}
+
+function setProgress(msg) {
+  const el = gi('batch-progress');
+  el.style.display = 'block';
+  el.textContent = msg;
+}
+
+function hideProgress() {
+  gi('batch-progress').style.display = 'none';
+}
+
+// Apply a header CSV row to the banner fields
+function applyHdrRow(row) {
+  gi('t-line1').value = row.line1 || '';
+  gi('t-line2').value = row.line2 || '';
+  gi('t-line3').value = row.line3 || '';
+  gi('t-line4').value = row.line4 || '';
+  renderBanners();
+}
+
+// Apply a stats CSV row to the banner fields
+function applyStatsRow(row) {
+  gi('s-headline').value = row.headline || '';
+  gi('s-n1').value = row.n1 || ''; gi('s-l1').value = row.l1 || '';
+  gi('s-n2').value = row.n2 || ''; gi('s-l2').value = row.l2 || '';
+  gi('s-n3').value = row.n3 || ''; gi('s-l3').value = row.l3 || '';
+  gi('s-source').value = row.source || '';
+  renderBanners();
+}
+
+async function captureCanvas(elId, w, h) {
+  const el = gi(elId);
+  const canvas = await html2canvas(el, {
+    scale: 2, useCORS: true, allowTaint: true,
+    backgroundColor: null, logging: false,
+    width: el.offsetWidth, height: el.offsetHeight,
+  });
+  if (w && h && (w !== el.offsetWidth || h !== el.offsetHeight)) {
+    const final = document.createElement('canvas');
+    final.width = w; final.height = h;
+    final.getContext('2d').drawImage(canvas, 0, 0, w, h);
+    return final;
+  }
+  return canvas;
+}
+
+async function batchExportAll() {
+  const hdrLangs = getUniqueHeaderLangs();
+  const statsLangs = getAllStatsLangs();
+
+  if (!hdrLangs.length && !statsLangs.length) {
+    showToast('⚠ Load CSV files first', '#ff6b6b'); return;
+  }
+
+  const btn = gi('btn-batch-all');
+  btn.textContent = 'Working...'; btn.classList.add('loading');
+
+  const zip = new JSZip();
+  const send = (gv('fn-send') || 'Send1').trim();
+  const cat = CAT_CODES[gv('t-category')] || 'HGN';
+
+  // Save current field values to restore later
+  const snapshot = {};
+  FIELD_IDS.forEach(id => { const el = gi(id); if(el) snapshot[id] = el.value; });
+
+  let total = hdrLangs.length * 2 + statsLangs.length;
+  let done = 0;
+
+  // ── HEADER BANNERS ──────────────────────────────────────────────────────────
+  for (const { rawLang, canon, row } of hdrLangs) {
+    applyHdrRow(row);
+    await new Promise(r => setTimeout(r, 120)); // let DOM settle
+
+    setProgress(`Header ${canon} (${done+1}/${total})...`);
+
+    // 600×300
+    const c1 = await captureCanvas('preview-header');
+    zip.file(`600x300-HeaderBanner-${cat}-${send}-${canon}.png`, c1.toDataURL('image/png').split(',')[1], {base64:true});
+    done++;
+
+    // 480×250
+    setProgress(`Header ${canon} 480×250 (${done+1}/${total})...`);
+    const c2 = await captureCanvas('preview-header', 480, 250);
+    zip.file(`480x250-HeaderBanner-${cat}-${send}-${canon}.png`, c2.toDataURL('image/png').split(',')[1], {base64:true});
+    done++;
+  }
+
+  // ── STATS BANNERS ───────────────────────────────────────────────────────────
+  for (const { rawLang, canon, row } of statsLangs) {
+    applyStatsRow(row);
+    await new Promise(r => setTimeout(r, 120));
+
+    const statsLang = LANG_GROUPS[rawLang] || cleanLang(rawLang);
+    setProgress(`Stats ${statsLang} (${done+1}/${total})...`);
+
+    const c3 = await captureCanvas('preview-stats', 480, 145);
+    zip.file(`480x145-StatsBanner-${send}-${statsLang}.png`, c3.toDataURL('image/png').split(',')[1], {base64:true});
+    done++;
+  }
+
+  // Restore original fields
+  FIELD_IDS.forEach(id => { const el = gi(id); if(el && snapshot[id] !== undefined) el.value = snapshot[id]; });
+  renderBanners();
+
+  // Generate ZIP
+  setProgress('Zipping files...');
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const link = document.createElement('a');
+  link.download = `imc-banners-${send}-${Date.now()}.zip`;
+  link.href = URL.createObjectURL(blob);
+  link.click();
+
+  hideProgress();
+  btn.textContent = '↓ Download All (ZIP)';
+  btn.classList.remove('loading');
+  showToast(`✓ ${done} banners exported`, '#4ade80');
+}
+
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js">
+// ── LANGUAGE GROUPS ───────────────────────────────────────────────────────────
+// Maps CSV language values → canonical filename lang code
+const LANG_GROUPS = {
+  'NA':                        'EN',
+  'UK (proofread)':            'EN',
+  'AE (proofread)':            'EN',
+  'IE (proofread)':            'EN',
+  'AU WINTER 2026 (proofread)':'EN',
+  'FR (proofread)':            'FR',
+  'BEFR - (proofread)':        'FR',
+  'ES (proofread)':            'ES',
+  'DE (proofread)':            'DE',
+  'PL (proofread)':            'PL',
+  'NL (proofread)':            'NL',
+  'BENL - (proofread)':        'NL',
+};
+
+// Get unique header langs — one per canonical code, first match wins
+function getUniqueHeaderLangs() {
+  if (!csvStore.hdr.length) return [];
+  const keyCol = Object.keys(csvStore.hdr[0]).find(k=>k==='language'||k==='lang') || Object.keys(csvStore.hdr[0])[0];
+  const seen = new Set();
+  const result = [];
+  for (const row of csvStore.hdr) {
+    const rawLang = row[keyCol];
+    const canon = LANG_GROUPS[rawLang] || cleanLang(rawLang);
+    if (!seen.has(canon)) {
+      seen.add(canon);
+      result.push({ rawLang, canon, row });
+    }
+  }
+  return result;
+}
+
+// Get all stats langs (one per row)
+function getAllStatsLangs() {
+  if (!csvStore.stats.length) return [];
+  const keyCol = Object.keys(csvStore.stats[0]).find(k=>k==='language'||k==='lang') || Object.keys(csvStore.stats[0])[0];
+  return csvStore.stats.map(row => ({
+    rawLang: row[keyCol],
+    canon: LANG_GROUPS[row[keyCol]] || cleanLang(row[keyCol]),
+    row
+  }));
+}
+
+function setProgress(msg) {
+  const el = gi('batch-progress');
+  el.style.display = 'block';
+  el.textContent = msg;
+}
+
+function hideProgress() {
+  gi('batch-progress').style.display = 'none';
+}
+
+// Apply a header CSV row to the banner fields
+function applyHdrRow(row) {
+  gi('t-line1').value = row.line1 || '';
+  gi('t-line2').value = row.line2 || '';
+  gi('t-line3').value = row.line3 || '';
+  gi('t-line4').value = row.line4 || '';
+  renderBanners();
+}
+
+// Apply a stats CSV row to the banner fields
+function applyStatsRow(row) {
+  gi('s-headline').value = row.headline || '';
+  gi('s-n1').value = row.n1 || ''; gi('s-l1').value = row.l1 || '';
+  gi('s-n2').value = row.n2 || ''; gi('s-l2').value = row.l2 || '';
+  gi('s-n3').value = row.n3 || ''; gi('s-l3').value = row.l3 || '';
+  gi('s-source').value = row.source || '';
+  renderBanners();
+}
+
+async function captureCanvas(elId, w, h) {
+  const el = gi(elId);
+  const canvas = await html2canvas(el, {
+    scale: 2, useCORS: true, allowTaint: true,
+    backgroundColor: null, logging: false,
+    width: el.offsetWidth, height: el.offsetHeight,
+  });
+  if (w && h && (w !== el.offsetWidth || h !== el.offsetHeight)) {
+    const final = document.createElement('canvas');
+    final.width = w; final.height = h;
+    final.getContext('2d').drawImage(canvas, 0, 0, w, h);
+    return final;
+  }
+  return canvas;
+}
+
+async function batchExportAll() {
+  const hdrLangs = getUniqueHeaderLangs();
+  const statsLangs = getAllStatsLangs();
+
+  if (!hdrLangs.length && !statsLangs.length) {
+    showToast('⚠ Load CSV files first', '#ff6b6b'); return;
+  }
+
+  const btn = gi('btn-batch-all');
+  btn.textContent = 'Working...'; btn.classList.add('loading');
+
+  const zip = new JSZip();
+  const send = (gv('fn-send') || 'Send1').trim();
+  const cat = CAT_CODES[gv('t-category')] || 'HGN';
+
+  // Save current field values to restore later
+  const snapshot = {};
+  FIELD_IDS.forEach(id => { const el = gi(id); if(el) snapshot[id] = el.value; });
+
+  let total = hdrLangs.length * 2 + statsLangs.length;
+  let done = 0;
+
+  // ── HEADER BANNERS ──────────────────────────────────────────────────────────
+  for (const { rawLang, canon, row } of hdrLangs) {
+    applyHdrRow(row);
+    await new Promise(r => setTimeout(r, 120)); // let DOM settle
+
+    setProgress(`Header ${canon} (${done+1}/${total})...`);
+
+    // 600×300
+    const c1 = await captureCanvas('preview-header');
+    zip.file(`600x300-HeaderBanner-${cat}-${send}-${canon}.png`, c1.toDataURL('image/png').split(',')[1], {base64:true});
+    done++;
+
+    // 480×250
+    setProgress(`Header ${canon} 480×250 (${done+1}/${total})...`);
+    const c2 = await captureCanvas('preview-header', 480, 250);
+    zip.file(`480x250-HeaderBanner-${cat}-${send}-${canon}.png`, c2.toDataURL('image/png').split(',')[1], {base64:true});
+    done++;
+  }
+
+  // ── STATS BANNERS ───────────────────────────────────────────────────────────
+  for (const { rawLang, canon, row } of statsLangs) {
+    applyStatsRow(row);
+    await new Promise(r => setTimeout(r, 120));
+
+    const statsLang = LANG_GROUPS[rawLang] || cleanLang(rawLang);
+    setProgress(`Stats ${statsLang} (${done+1}/${total})...`);
+
+    const c3 = await captureCanvas('preview-stats', 480, 145);
+    zip.file(`480x145-StatsBanner-${send}-${statsLang}.png`, c3.toDataURL('image/png').split(',')[1], {base64:true});
+    done++;
+  }
+
+  // Restore original fields
+  FIELD_IDS.forEach(id => { const el = gi(id); if(el && snapshot[id] !== undefined) el.value = snapshot[id]; });
+  renderBanners();
+
+  // Generate ZIP
+  setProgress('Zipping files...');
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const link = document.createElement('a');
+  link.download = `imc-banners-${send}-${Date.now()}.zip`;
+  link.href = URL.createObjectURL(blob);
+  link.click();
+
+  hideProgress();
+  btn.textContent = '↓ Download All (ZIP)';
+  btn.classList.remove('loading');
+  showToast(`✓ ${done} banners exported`, '#4ade80');
+}
+
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{--bg:#1a1a1f;--surface:#242429;--surface2:#2e2e35;--border:rgba(255,255,255,0.08);--text:#f0f0f0;--text-muted:#888;--text-dim:#555;--radius:10px;--accent:#EF7100;}
+body{background:var(--bg);color:var(--text);font-family:'Montserrat',Arial,sans-serif;min-height:100vh;}
+.app{display:grid;grid-template-columns:340px 1fr;height:100vh;overflow:hidden;}
+.sidebar{background:var(--surface);border-right:1px solid var(--border);padding:24px 20px;overflow-y:auto;height:100vh;display:flex;flex-direction:column;gap:20px;}
+.logo{font-size:11px;font-weight:800;letter-spacing:3px;text-transform:uppercase;color:var(--accent);padding-bottom:16px;border-bottom:1px solid var(--border);}
+.logo span{color:var(--text-muted);}
+.section-title{font-size:9px;font-weight:800;letter-spacing:2.5px;text-transform:uppercase;color:var(--text-dim);margin-bottom:10px;}
+.card{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column;gap:10px;}
+.tabs{display:flex;gap:4px;background:var(--bg);border-radius:8px;padding:4px;}
+.tab{flex:1;padding:8px;border-radius:6px;border:none;background:transparent;color:var(--text-muted);font-family:'Montserrat',sans-serif;font-size:11px;font-weight:700;cursor:pointer;transition:all 0.2s;}
+.tab.active{background:var(--accent);color:#fff;}
+.field{display:flex;flex-direction:column;gap:5px;}
+.field label{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);}
+.field input[type="text"],.field input[type="url"],.field select{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text);font-family:'Montserrat',sans-serif;font-size:12px;font-weight:600;outline:none;transition:border-color 0.2s;width:100%;}
+.field input:focus,.field select:focus{border-color:var(--accent);}
+.field select option{background:#2a2a2a;}
+/* Slider + number input combo */
+.srow{display:flex;align-items:center;gap:8px;}
+.srow input[type="range"]{flex:1;-webkit-appearance:none;appearance:none;height:3px;background:var(--border);border-radius:2px;outline:none;}
+.srow input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer;}
+.srow input[type="number"]{width:52px;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:3px 5px;color:var(--accent);font-family:'Montserrat',sans-serif;font-size:11px;font-weight:800;text-align:center;outline:none;-moz-appearance:textfield;}
+.srow input[type="number"]::-webkit-inner-spin-button{-webkit-appearance:none;}
+.srow input[type="number"]:focus{border-color:var(--accent);}
+/* Color input full width */
+.color-input{width:100%;height:34px;border-radius:6px;border:none;cursor:pointer;display:block;}
+/* Buttons */
+.btn-export{background:linear-gradient(135deg,#EF7100,#FFD600);color:#1a1a1f;font-size:11px;padding:13px;border-radius:10px;border:none;font-family:'Montserrat',sans-serif;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;transition:all 0.2s;width:100%;}
+.btn-export:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(239,113,0,0.4);}
+.btn-export.loading{opacity:0.7;pointer-events:none;}
+.btn-sm{padding:8px 12px;border-radius:7px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);font-family:'Montserrat',sans-serif;font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:all 0.2s;width:100%;}
+.btn-sm:hover{border-color:var(--accent);color:var(--accent);}
+.btn-sm.green:hover{border-color:#4ade80;color:#4ade80;}
+.btn-sm.blue:hover{border-color:#00BFFF;color:#00BFFF;}
+.btn-sm-upload{position:relative;}
+.btn-sm-upload input[type="file"]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+/* Canvas */
+.canvas-area{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:32px;gap:28px;height:100vh;overflow-y:auto;min-width:0;}
+.banner-label{font-size:9px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;}
+.preview-wrap{display:flex;flex-direction:column;align-items:flex-start;}
+/* Header Banner */
+.header-banner{width:600px;min-width:600px;max-width:600px;height:300px;border-radius:10px;overflow:hidden;position:relative;box-shadow:0 12px 40px rgba(0,0,0,0.5);font-family:'Montserrat',Arial,sans-serif;}
+.hb-img{position:absolute;top:0;left:0;display:block;pointer-events:none;transform-origin:top left;}
+.hb-fade{position:absolute;inset:0;z-index:1;}
+.hb-diag-1,.hb-diag-2{position:absolute;top:-70px;width:26px;height:540px;transform:rotate(14deg);z-index:2;pointer-events:none;}
+.hb-diag-1{right:calc(43% + 14px);background:rgba(255,255,255,0.10);}
+.hb-diag-2{right:calc(43% - 10px);background:rgba(255,255,255,0.06);}
+.hb-text{position:absolute;inset:0;z-index:3;padding:30px 20px 30px 32px;display:flex;flex-direction:column;justify-content:center;width:60%;}
+.hb-txt-small{font-size:16px;font-weight:700;color:rgba(255,255,255,0.95);line-height:1.3;}
+.hb-txt-big{font-size:56px;font-weight:900;font-style:italic;color:#fff;line-height:0.93;letter-spacing:-1px;}
+.hb-txt-accent{font-size:28px;font-weight:900;line-height:1.2;margin-top:6px;}
+/* Stats Banner */
+.stats-banner{width:480px;height:145px;border-radius:12px;overflow:hidden;position:relative;padding:0 28px;box-shadow:0 12px 40px rgba(0,0,0,0.5);font-family:'Montserrat',Arial,sans-serif;display:flex;flex-direction:column;}
+.stats-banner::after{content:'';position:absolute;top:-35px;right:-35px;width:120px;height:120px;border:14px solid rgba(255,255,255,0.06);border-radius:50%;pointer-events:none;}
+.sb-bg{position:absolute;inset:0;z-index:0;}
+.sb-content{position:relative;z-index:1;display:flex;flex-direction:column;gap:10px;justify-content:center;flex:1;}
+.sb-headline{font-size:18px;font-weight:900;font-style:italic;color:#fff;line-height:1;}
+.sb-row{display:flex;justify-content:space-between;align-items:flex-start;}
+.sb-block{text-align:center;flex:1;}
+.sb-number{display:block;font-size:28px;font-weight:900;line-height:1;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sb-number.long{font-size:20px;}
+.sb-label{display:block;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:rgba(255,255,255,0.7);}
+.sb-divider{width:1px;align-self:stretch;background:rgba(255,255,255,0.15);flex-shrink:0;margin:0 4px;}
+.sb-source{position:absolute;bottom:7px;right:14px;z-index:1;font-size:9px;font-style:italic;color:rgba(255,255,255,0.38);font-weight:600;}
+.sep{width:600px;height:1px;background:var(--border);margin:4px 0;}
+/* Toast */
+.toast{position:fixed;bottom:28px;right:28px;background:#2a2a2a;border:1px solid var(--border);border-radius:10px;padding:12px 18px;font-size:12px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:10px;transform:translateY(80px);opacity:0;transition:all 0.3s;z-index:999;}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast-dot{width:8px;height:8px;border-radius:50%;background:#4ade80;}
+/* More tools */
+.mt-btn{display:flex;align-items:center;justify-content:space-between;width:100%;padding:8px 12px;border-radius:7px;border:1px dashed rgba(255,255,255,0.15);background:transparent;color:var(--text-muted);font-family:'Montserrat',sans-serif;font-size:10px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;transition:all 0.2s;margin-top:2px;}
+.mt-btn:hover{border-color:var(--accent);color:var(--accent);}
+.mt-btn .arr{transition:transform 0.25s;}
+.mt-btn.open .arr{transform:rotate(180deg);}
+.mt-panel{display:none;flex-direction:column;gap:10px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;margin-top:4px;}
+.mt-panel.open{display:flex;}
+.mt-div{height:1px;background:var(--border);margin:2px 0;}
+.mt-lbl{font-size:9px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:2px;}
+/* CSV */
+.csv-zone{border:2px dashed rgba(255,255,255,0.15);border-radius:8px;padding:12px;text-align:center;cursor:pointer;transition:all 0.2s;position:relative;}
+.csv-zone:hover,.csv-zone.dragover{border-color:var(--accent);background:rgba(239,113,0,0.06);}
+.csv-zone input[type="file"]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+.csv-zone-lbl{font-size:11px;font-weight:700;color:var(--text-muted);pointer-events:none;}
+.csv-zone-lbl span{color:var(--accent);}
+.csv-loaded{display:none;flex-direction:column;gap:8px;}
+.csv-loaded.on{display:flex;}
+.csv-ok{font-size:10px;font-weight:700;color:#4ade80;}
+.csv-clr{font-size:10px;font-weight:800;color:var(--text-dim);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;font-family:inherit;}
+.csv-clr:hover{color:#ff6b6b;}
+/* Filenames */
+.fn-box{font-size:10px;font-weight:700;word-break:break-all;line-height:1.5;padding:7px 10px;background:var(--bg);border-radius:6px;border:1px solid var(--border);}
+/* Lock button */
+.lock-row{display:flex;align-items:center;gap:8px;}
+.lock-btn{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:14px;transition:all 0.2s;flex-shrink:0;}
+.lock-btn.locked{border-color:var(--accent);background:rgba(239,113,0,0.15);}
+/* State indicator */
+.state-dot{width:6px;height:6px;border-radius:50%;background:#4ade80;display:inline-block;margin-right:4px;}
+.state-dot.dirty{background:#EF7100;}
+</style>
+</head>
+<body>
+<div class="app">
+<div class="sidebar">
+  <div class="logo">IMC Banners <span>/ Editor</span></div>
+
+  <!-- SESSION -->
+  <div>
+    <div class="section-title">Session</div>
+    <div class="card">
+      <div style="font-size:10px;color:var(--text-muted);font-weight:600;line-height:1.5;"><span class="state-dot" id="state-dot"></span><span id="state-label">All changes auto-saved locally</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <button class="btn-sm green" onclick="downloadSession()">↓ Download</button>
+        <div class="btn-sm blue btn-sm-upload">↑ Load File<input type="file" accept=".json" onchange="loadSessionFile(this.files[0])"></div>
+      </div>
+      <button class="btn-sm" onclick="clearLocalStorage()" style="border-color:#ff6b6b;color:#ff6b6b;font-size:9px;">✕ Clear saved state</button>
+    </div>
+  </div>
+
+  <!-- CAMPAIGN -->
+  <div>
+    <div class="section-title">Campaign</div>
+    <div class="card">
+      <div class="tabs">
+        <button class="tab active" onclick="switchMode('summer')">☀️ Summer</button>
+        <button class="tab" onclick="switchMode('winter')">❄️ Winter</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- HEADER TEXT -->
+  <div>
+    <div class="section-title">Header — Text</div>
+    <div class="card">
+      <div class="csv-zone" id="hdr-csv-zone" ondragover="event.preventDefault();this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="handleDrop(event,'hdr')">
+        <input type="file" accept=".csv" onchange="loadCsv(this.files[0],'hdr')">
+        <div class="csv-zone-lbl">↑ Upload Copy CSV &nbsp;·&nbsp; <span>click or drag</span></div>
+      </div>
+      <div class="csv-loaded" id="hdr-csv-loaded">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div class="csv-ok" id="hdr-csv-ok">—</div>
+          <button class="csv-clr" onclick="clearCsv('hdr')">✕ Clear</button>
+        </div>
+        <div class="field"><label>Language</label><select id="hdr-csv-picker" onchange="applyCsv('hdr')"></select></div>
+      </div>
+      <div style="height:1px;background:var(--border);"></div>
+      <div class="field"><label>Line 1 (small)</label><input type="text" id="t-line1" value="Your Biggest" oninput="onFieldChange()"></div>
+      <div class="field"><label>Line 2 (big italic)</label><input type="text" id="t-line2" value="Summer" oninput="onFieldChange()"></div>
+      <div class="field"><label>Line 3 (small)</label><input type="text" id="t-line3" value="Yet" oninput="onFieldChange()"></div>
+      <div class="field"><label>Line 4 (accent)</label><input type="text" id="t-line4" value="Starts Now!" oninput="onFieldChange()"></div>
+      <button class="mt-btn" id="hmt-btn" onclick="toggleMT('hmt')">✦ More Tools <span class="arr">▾</span></button>
+      <div class="mt-panel" id="hmt-panel">
+        <div class="mt-lbl">Font sizes (px)</div>
+        <div class="field"><label>Line 1</label><div class="srow"><input type="range" min="8" max="36" step="1" id="mt-fs1" value="16" oninput="syncNum('mt-fs1');mtFs1()"><input type="number" id="mt-fs1-n" value="16" min="8" max="36" oninput="syncRange('mt-fs1');mtFs1()"></div></div>
+        <div class="field"><label>Line 2</label><div class="srow"><input type="range" min="20" max="90" step="1" id="mt-fs2" value="56" oninput="syncNum('mt-fs2');mtFs2()"><input type="number" id="mt-fs2-n" value="56" min="20" max="90" oninput="syncRange('mt-fs2');mtFs2()"></div></div>
+        <div class="field"><label>Line 3</label><div class="srow"><input type="range" min="8" max="36" step="1" id="mt-fs3" value="16" oninput="syncNum('mt-fs3');mtFs3()"><input type="number" id="mt-fs3-n" value="16" min="8" max="36" oninput="syncRange('mt-fs3');mtFs3()"></div></div>
+        <div class="field"><label>Line 4</label><div class="srow"><input type="range" min="12" max="60" step="1" id="mt-fs4" value="28" oninput="syncNum('mt-fs4');mtFs4()"><input type="number" id="mt-fs4-n" value="28" min="12" max="60" oninput="syncRange('mt-fs4');mtFs4()"></div></div>
+        <div class="mt-div"></div>
+        <div class="mt-lbl">Spacing</div>
+        <div class="field"><label>Vertical gap (px)</label><div class="srow"><input type="range" min="0" max="24" step="1" id="mt-vgap" value="4" oninput="syncNum('mt-vgap');mtVgap()"><input type="number" id="mt-vgap-n" value="4" min="0" max="24" oninput="syncRange('mt-vgap');mtVgap()"></div></div>
+        <div class="field"><label>Left padding (px)</label><div class="srow"><input type="range" min="8" max="80" step="1" id="mt-padl" value="32" oninput="syncNum('mt-padl');mtPadl()"><input type="number" id="mt-padl-n" value="32" min="8" max="80" oninput="syncRange('mt-padl');mtPadl()"></div></div>
+        <div class="mt-div"></div>
+        <div class="mt-lbl">Layout</div>
+        <div class="field"><label>Text panel width (%)</label><div class="srow"><input type="range" min="30" max="80" step="1" id="mt-panelw" value="60" oninput="syncNum('mt-panelw');mtPanelw()"><input type="number" id="mt-panelw-n" value="60" min="30" max="80" oninput="syncRange('mt-panelw');mtPanelw()"></div></div>
+        <div class="field"><label>Text opacity (%)</label><div class="srow"><input type="range" min="20" max="100" step="1" id="mt-textop" value="100" oninput="syncNum('mt-textop');mtTextop()"><input type="number" id="mt-textop-n" value="100" min="20" max="100" oninput="syncRange('mt-textop');mtTextop()"></div></div>
+        <div class="mt-div"></div>
+        <div class="mt-lbl">Diagonal lines opacity</div>
+        <div class="field"><label>Line 1 (%)</label><div class="srow"><input type="range" min="0" max="40" step="1" id="mt-diag1" value="10" oninput="syncNum('mt-diag1');mtDiag1()"><input type="number" id="mt-diag1-n" value="10" min="0" max="40" oninput="syncRange('mt-diag1');mtDiag1()"></div></div>
+        <div class="field"><label>Line 2 (%)</label><div class="srow"><input type="range" min="0" max="40" step="1" id="mt-diag2" value="6" oninput="syncNum('mt-diag2');mtDiag2()"><input type="number" id="mt-diag2-n" value="6" min="0" max="40" oninput="syncRange('mt-diag2');mtDiag2()"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HEADER IMAGE -->
+  <div>
+    <div class="section-title">Header — Image</div>
+    <div class="card">
+      <div class="field"><label>Category</label>
+        <select id="t-category" onchange="selectCategory()">
+          <option value="beauty">Beauty &amp; Wellness</option>
+          <option value="food">Food &amp; Drink</option>
+          <option value="leisure">Things to Do / Leisure</option>
+          <option value="services">Services</option>
+          <option value="general">General (Fallback)</option>
+          <option value="custom">Custom URL...</option>
+        </select>
+      </div>
+      <div class="field"><label>Image URL</label><input type="text" id="t-imgurl" oninput="onImgUrlChange()"></div>
+      <div class="field"><label>Background color</label><input type="color" id="t-bgcolor" value="#EF7100" oninput="onFieldChange()" class="color-input"></div>
+      <div class="field"><label>Position X (← →)</label><div class="srow"><input type="range" min="0" max="200" step="1" id="img-pos-x" value="50" oninput="syncNum('img-pos-x');updateImagePosition()"><input type="number" id="img-pos-x-n" value="50" min="0" max="200" oninput="syncRange('img-pos-x');updateImagePosition()"></div></div>
+      <div class="field"><label>Position Y (↑ ↓)</label><div class="srow"><input type="range" min="0" max="200" step="1" id="img-pos-y" value="50" oninput="syncNum('img-pos-y');updateImagePosition()"><input type="number" id="img-pos-y-n" value="50" min="0" max="200" oninput="syncRange('img-pos-y');updateImagePosition()"></div></div>
+      <div class="mt-div"></div>
+      <div class="mt-lbl">Image scale</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <span style="font-size:10px;color:var(--text-muted);font-weight:700;">Proportional lock</span>
+        <button class="lock-btn locked" id="scale-lock" onclick="toggleLock()" title="Lock proportions">🔒</button>
+      </div>
+      <div class="field"><label>Scale W (%)</label><div class="srow"><input type="range" min="50" max="300" step="1" id="img-scale-w" value="100" oninput="syncNum('img-scale-w');onScaleW()"><input type="number" id="img-scale-w-n" value="100" min="50" max="300" oninput="syncRange('img-scale-w');onScaleW()"></div></div>
+      <div class="field"><label>Scale H (%)</label><div class="srow"><input type="range" min="50" max="300" step="1" id="img-scale-h" value="100" oninput="syncNum('img-scale-h');onScaleH()"><input type="number" id="img-scale-h-n" value="100" min="50" max="300" oninput="syncRange('img-scale-h');onScaleH()"></div></div>
+    </div>
+  </div>
+
+  <!-- HEADER FADE -->
+  <div>
+    <div class="section-title">Header — Fade</div>
+    <div class="card">
+      <div class="field"><label>Gradient start</label><input type="color" id="c-grad1" value="#CF4400" oninput="onFieldChange()" class="color-input"></div>
+      <div class="field"><label>Gradient end</label><input type="color" id="c-grad2" value="#FFA800" oninput="onFieldChange()" class="color-input"></div>
+      <div class="field"><label>Accent color (line 4)</label><input type="color" id="c-accent" value="#FFD600" oninput="onFieldChange()" class="color-input"></div>
+      <div class="field"><label>Fade start %</label><div class="srow"><input type="range" min="10" max="80" step="1" id="fade-start" value="38" oninput="syncNum('fade-start');updateFade()"><input type="number" id="fade-start-n" value="38" min="10" max="80" oninput="syncRange('fade-start');updateFade()"></div></div>
+      <div class="field"><label>Fade end %</label><div class="srow"><input type="range" min="20" max="100" step="1" id="fade-end" value="78" oninput="syncNum('fade-end');updateFade()"><input type="number" id="fade-end-n" value="78" min="20" max="100" oninput="syncRange('fade-end');updateFade()"></div></div>
+      <div class="field"><label>Solid opacity %</label><div class="srow"><input type="range" min="50" max="100" step="1" id="fade-opacity" value="100" oninput="syncNum('fade-opacity');updateFade()"><input type="number" id="fade-opacity-n" value="100" min="50" max="100" oninput="syncRange('fade-opacity');updateFade()"></div></div>
+      <div style="height:1px;background:var(--border);margin:2px 0;"></div>
+      <div style="font-size:9px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--text-dim);margin-bottom:2px;">Diagonal line</div>
+      <div class="field"><label>Position X (px from right)</label><div class="srow"><input type="range" min="-100" max="400" step="1" id="diag-pos" value="170" oninput="syncNum('diag-pos');updateDiagonal()"><input type="number" id="diag-pos-n" value="170" min="-100" max="400" oninput="syncRange('diag-pos');updateDiagonal()"></div></div>
+      <div class="field"><label>Angle (degrees)</label><div class="srow"><input type="range" min="0" max="180" step="1" id="diag-angle" value="14" oninput="syncNum('diag-angle');updateDiagonal()"><input type="number" id="diag-angle-n" value="14" min="0" max="180" oninput="syncRange('diag-angle');updateDiagonal()"></div></div>
+      <div class="field"><label>Width (px)</label><div class="srow"><input type="range" min="4" max="80" step="1" id="diag-width" value="26" oninput="syncNum('diag-width');updateDiagonal()"><input type="number" id="diag-width-n" value="26" min="4" max="80" oninput="syncRange('diag-width');updateDiagonal()"></div></div>
+      <div class="field"><label>Gap between lines (px)</label><div class="srow"><input type="range" min="0" max="60" step="1" id="diag-gap" value="24" oninput="syncNum('diag-gap');updateDiagonal()"><input type="number" id="diag-gap-n" value="24" min="0" max="60" oninput="syncRange('diag-gap');updateDiagonal()"></div></div>
+    </div>
+  </div>
+
+  <!-- STATS -->
+  <div>
+    <div class="section-title">Stats Banner</div>
+    <div class="card">
+      <div class="csv-zone" id="stats-csv-zone" ondragover="event.preventDefault();this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="handleDrop(event,'stats')">
+        <input type="file" accept=".csv" onchange="loadCsv(this.files[0],'stats')">
+        <div class="csv-zone-lbl">↑ Upload Stats CSV &nbsp;·&nbsp; <span>click or drag</span></div>
+      </div>
+      <div class="csv-loaded" id="stats-csv-loaded">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div class="csv-ok" id="stats-csv-ok">—</div>
+          <button class="csv-clr" onclick="clearCsv('stats')">✕ Clear</button>
+        </div>
+        <div class="field"><label>Language</label><select id="stats-csv-picker" onchange="applyCsv('stats')"></select></div>
+      </div>
+      <div style="height:1px;background:var(--border);"></div>
+      <div class="field"><label>Headline</label><input type="text" id="s-headline" value="Last Summer..." oninput="onFieldChange()"></div>
+      <div class="field"><label>Stat 1 — Number</label><input type="text" id="s-n1" value="10M" oninput="onFieldChange()"></div>
+      <div class="field"><label>Stat 1 — Label</label><input type="text" id="s-l1" value="Active Users" oninput="onFieldChange()"></div>
+      <div class="field"><label>Stat 2 — Number</label><input type="text" id="s-n2" value="446K" oninput="onFieldChange()"></div>
+      <div class="field"><label>Stat 2 — Label</label><input type="text" id="s-l2" value="Units Sold" oninput="onFieldChange()"></div>
+      <div class="field"><label>Stat 3 — Number</label><input type="text" id="s-n3" value="$22.1M" oninput="onFieldChange()"></div>
+      <div class="field"><label>Stat 3 — Label</label><input type="text" id="s-l3" value="Revenue" oninput="onFieldChange()"></div>
+      <div class="field"><label>Source note</label><input type="text" id="s-source" value="* Groupon internal data per week, June–August 2025" oninput="onFieldChange()"></div>
+      <button class="mt-btn" id="smt-btn" onclick="toggleMT('smt')">✦ More Tools <span class="arr">▾</span></button>
+      <div class="mt-panel" id="smt-panel">
+        <div class="mt-lbl">Font sizes (px)</div>
+        <div class="field"><label>Headline</label><div class="srow"><input type="range" min="10" max="36" step="1" id="smt-fshl" value="18" oninput="syncNum('smt-fshl');smtFshl()"><input type="number" id="smt-fshl-n" value="18" min="10" max="36" oninput="syncRange('smt-fshl');smtFshl()"></div></div>
+        <div class="field"><label>Numbers</label><div class="srow"><input type="range" min="14" max="52" step="1" id="smt-fsnum" value="28" oninput="syncNum('smt-fsnum');smtFsnum()"><input type="number" id="smt-fsnum-n" value="28" min="14" max="52" oninput="syncRange('smt-fsnum');smtFsnum()"></div></div>
+        <div class="field"><label>Labels</label><div class="srow"><input type="range" min="6" max="18" step="1" id="smt-fslbl" value="9" oninput="syncNum('smt-fslbl');smtFslbl()"><input type="number" id="smt-fslbl-n" value="9" min="6" max="18" oninput="syncRange('smt-fslbl');smtFslbl()"></div></div>
+        <div class="mt-div"></div>
+        <div class="mt-lbl">Colors</div>
+        <div class="field"><label>Gradient start</label><input type="color" id="smt-gbg1" value="#FF4E50" oninput="smtBg()" class="color-input"></div>
+        <div class="field"><label>Gradient end</label><input type="color" id="smt-gbg2" value="#FFC107" oninput="smtBg()" class="color-input"></div>
+        <div class="field"><label>Headline color</label><input type="color" id="smt-chl" value="#ffffff" oninput="smtChl()" class="color-input"></div>
+        <div class="field"><label>Numbers color</label><input type="color" id="smt-cnum" value="#FFD600" oninput="smtCnum()" class="color-input"></div>
+        <div class="mt-div"></div>
+        <div class="mt-lbl">Layout</div>
+        <div class="field"><label>Gap between blocks (px)</label><div class="srow"><input type="range" min="0" max="40" step="1" id="smt-gap" value="4" oninput="syncNum('smt-gap');smtGap()"><input type="number" id="smt-gap-n" value="4" min="0" max="40" oninput="syncRange('smt-gap');smtGap()"></div></div>
+        <div class="field"><label>Vertical padding (px)</label><div class="srow"><input type="range" min="0" max="40" step="1" id="smt-vpad" value="0" oninput="syncNum('smt-vpad');smtVpad()"><input type="number" id="smt-vpad-n" value="0" min="0" max="40" oninput="syncRange('smt-vpad');smtVpad()"></div></div>
+        <div class="field"><label>Show dividers</label><select id="smt-dividers" onchange="smtDividers()"><option value="1">Visible</option><option value="0">Hidden</option></select></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EXPORT -->
+  <div>
+    <div class="section-title">Export</div>
+    <div class="card" style="gap:10px;margin-bottom:10px;">
+      <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);">Header Filename</div>
+      <div class="fn-box" style="color:var(--accent);" id="filename-preview">—</div>
+      <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);">Stats Filename</div>
+      <div class="fn-box" style="color:#00BFFF;" id="filename-stats-preview">—</div>
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;">
+        <div class="field"><label>Send</label><input type="text" id="fn-send" value="Send1" oninput="updateFilename()"></div>
+        <div class="field"><label>Lang</label><input type="text" id="fn-lang" value="ES" oninput="updateFilename()" style="text-align:center;"></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);">Individual</div>
+      <button class="btn-export" id="btn-export-header" onclick="exportBanner('header')">↓ Header (600×300)</button>
+      <button class="btn-export" id="btn-export-header-small" onclick="exportBanner('header-small')" style="background:linear-gradient(135deg,#b35000,#cc8800);color:#fff;">↓ Header (480×250)</button>
+      <button class="btn-export" id="btn-export-stats" onclick="exportBanner('stats')" style="background:linear-gradient(135deg,#0D47A1,#00ACC1);color:#fff;">↓ Stats (480×145)</button>
+      <div style="height:1px;background:var(--border);margin:4px 0;"></div>
+      <div style="font-size:9px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);">Batch — all languages</div>
+      <div id="batch-progress" style="display:none;padding:8px 10px;background:var(--bg);border-radius:6px;border:1px solid var(--border);font-size:10px;font-weight:700;color:var(--accent);">Preparing...</div>
+      <button class="btn-export" id="btn-batch-all" onclick="batchExportAll()" style="background:linear-gradient(135deg,#1a6b1a,#2ecc40);color:#fff;">↓ Download All (ZIP)</button>
+    </div>
+  </div>
+
+</div><!-- /sidebar -->
+
+<!-- CANVAS -->
+<div class="canvas-area">
+  <div class="preview-wrap">
+    <div class="banner-label">Header Banner — 600 × 300 px</div>
+    <div class="header-banner" id="preview-header">
+      <img class="hb-img" id="hb-img" src="" alt="">
+      <div class="hb-fade" id="hb-fade"></div>
+      <div class="hb-diag-1" id="hb-diag-1"></div>
+      <div class="hb-diag-2" id="hb-diag-2"></div>
+      <div class="hb-text" id="hb-text">
+        <div class="hb-txt-small" id="hb-line1"></div>
+        <div class="hb-txt-big" id="hb-line2"></div>
+        <div class="hb-txt-small" id="hb-line3"></div>
+        <div class="hb-txt-accent" id="hb-line4"></div>
+      </div>
+    </div>
+  </div>
+  <div class="sep"></div>
+  <div class="preview-wrap">
+    <div class="banner-label">Stats Banner — 480 × 145 px</div>
+    <div class="stats-banner" id="preview-stats">
+      <div class="sb-bg" id="sb-bg"></div>
+      <div class="sb-content">
+        <div class="sb-headline" id="sb-headline"></div>
+        <div class="sb-row" id="sb-row">
+          <div class="sb-block"><span class="sb-number" id="sb-n1"></span><span class="sb-label" id="sb-l1"></span></div>
+          <div class="sb-divider"></div>
+          <div class="sb-block"><span class="sb-number" id="sb-n2"></span><span class="sb-label" id="sb-l2"></span></div>
+          <div class="sb-divider"></div>
+          <div class="sb-block"><span class="sb-number" id="sb-n3"></span><span class="sb-label" id="sb-l3"></span></div>
+        </div>
+      </div>
+      <div class="sb-source" id="sb-source"></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="toast" id="toast"><div class="toast-dot"></div><span id="toast-msg"></span></div>
+
+<script>
+'use strict';
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let mode = 'summer';
+let scaleLocked = true;
+let csvStore = { hdr: [], stats: [] };
+
+// Per-combo state store: key = "mode|category|hdrLang|statsLang"
+let stateStore = {};
+
+const FIELD_IDS = [
+  't-line1','t-line2','t-line3','t-line4',
+  'c-grad1','c-grad2','c-accent','t-bgcolor',
+  't-category','t-imgurl',
+  'img-pos-x','img-pos-y','img-scale-w','img-scale-h',
+  'fade-start','fade-end','fade-opacity','diag-pos','diag-angle','diag-width','diag-gap',
+  's-headline','s-n1','s-l1','s-n2','s-l2','s-n3','s-l3','s-source',
+  'mt-fs1','mt-fs2','mt-fs3','mt-fs4',
+  'mt-vgap','mt-padl','mt-panelw','mt-textop','mt-diag1','mt-diag2',
+  'smt-fshl','smt-fsnum','smt-fslbl',
+  'smt-gbg1','smt-gbg2','smt-chl','smt-cnum',
+  'smt-gap','smt-vpad','smt-dividers',
+  'fn-send','fn-lang',
+];
+
+function comboKey() {
+  const cat = gi('t-category').value;
+  const hl = csvStore.hdr.length ? gi('hdr-csv-picker').value : '_';
+  const sl = csvStore.stats.length ? gi('stats-csv-picker').value : '_';
+  return `${mode}|${cat}|${hl}|${sl}`;
+}
+
+function saveCombo() {
+  const key = comboKey();
+  const state = {};
+  FIELD_IDS.forEach(id => { const el = gi(id); if(el) state[id] = el.value; });
+  // Also save more-tools panel open state
+  state._hmtOpen = gi('hmt-panel').classList.contains('open');
+  state._smtOpen = gi('smt-panel').classList.contains('open');
+  stateStore[key] = state;
+  persistLocal();
+}
+
+function loadCombo(key) {
+  const state = stateStore[key];
+  if (!state) return false;
+  FIELD_IDS.forEach(id => {
+    const el = gi(id);
+    if (el && state[id] !== undefined) el.value = state[id];
+  });
+  // Sync number inputs
+  ['img-pos-x','img-pos-y','img-scale-w','img-scale-h',
+   'fade-start','fade-end','fade-opacity','diag-pos','diag-angle','diag-width','diag-gap',
+   'mt-fs1','mt-fs2','mt-fs3','mt-fs4',
+   'mt-vgap','mt-padl','mt-panelw','mt-textop','mt-diag1','mt-diag2',
+   'smt-fshl','smt-fsnum','smt-fslbl','smt-gap','smt-vpad'
+  ].forEach(id => syncNum(id));
+  // Panels
+  ['hmt','smt'].forEach(p => {
+    const open = state['_'+p+'Open'];
+    gi(p+'-panel').classList.toggle('open', !!open);
+    gi(p+'-btn').classList.toggle('open', !!open);
+  });
+  return true;
+}
+
+function persistLocal() {
+  try {
+    localStorage.setItem('imc_state', JSON.stringify({ version2:true, mode, stateStore, csvStore }));
+  } catch(e) {}
+}
+
+function onFieldChange() {
+  renderBanners();
+  saveCombo();
+  updateFilename();
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function gi(id) { return document.getElementById(id); }
+function gv(id) { return gi(id).value; }
+function hexToRgba(hex,a){const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return `rgba(${r},${g},${b},${a})`;}
+function blendHex(h1,h2,t){const r=n=>parseInt(n.slice(1,3),16),mix=(a,b)=>Math.round(a*(1-t)+b*t);const R=mix(r(h1),r(h2)),G=mix(parseInt(h1.slice(3,5),16),parseInt(h2.slice(3,5),16)),B=mix(parseInt(h1.slice(5,7),16),parseInt(h2.slice(5,7),16));return '#'+[R,G,B].map(x=>x.toString(16).padStart(2,'0')).join('');}
+function showToast(msg,col){const t=gi('toast');gi('toast-msg').textContent=msg;t.style.borderColor=col||'var(--border)';t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000);}
+function cleanLang(s){return s.replace(/\s*\(.*?\)/g,'').trim().replace(/[-\s]+/g,'_');}
+
+// Sync slider ↔ number
+function syncNum(id) { const el=gi(id+'-n'); if(el) el.value=gi(id).value; }
+function syncRange(id) {
+  const n=gi(id+'-n'), r=gi(id);
+  if(!n||!r) return;
+  let v=parseFloat(n.value);
+  const mn=parseFloat(r.min||0), mx=parseFloat(r.max||100);
+  v=Math.max(mn,Math.min(mx,isNaN(v)?mn:v));
+  r.value=v; n.value=v;
+}
+
+// ── PRESETS ───────────────────────────────────────────────────────────────────
+const PRESETS = {
+  summer:{line1:'Your Biggest',line2:'Summer',line3:'Yet',line4:'Starts Now!',grad1:'#CF4400',grad2:'#FFA800',accent:'#FFD600',bgcolor:'#EF7100',
+    sHeadline:'Last Summer...',sN1:'10M',sL1:'Active Users',sN2:'446K',sL2:'Units Sold',sN3:'$22.1M',sL3:'Revenue',
+    sSource:'* Groupon internal data per week, June–August 2025',
+    sbGrad:'linear-gradient(135deg,#FF4E50 0%,#FF8F00 40%,#FFC107 100%)',sbAccent:'#FFD600'},
+  winter:{line1:'Win',line2:'Winter!',line3:'Your Customers',line4:'Are Searching',grad1:'#082966',grad2:'#1976D2',accent:'#00E5FF',bgcolor:'#0D47A1',
+    sHeadline:'Last Winter...',sN1:'309K',sL1:'Active Users',sN2:'12K',sL2:'Units Sold',sN3:'$760K AUD',sL3:'Revenue',
+    sSource:'* Groupon internal data per week, June–August 2025',
+    sbGrad:'linear-gradient(135deg,#0B2E84 0%,#0288D1 50%,#00ACC1 100%)',sbAccent:'#00E5FF'},
+};
+
+const CAT_IMGS = {
+  summer:{
+    beauty:  'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=900&auto=format&q=80',
+    food:    'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=900&auto=format&q=80',
+    leisure: 'https://images.unsplash.com/photo-1533107862482-0e6974b06ec4?w=900&auto=format&q=80',
+    services:'https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=900&auto=format&q=80',
+    general: 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=900&auto=format&q=80',
+  },
+  winter:{
+    beauty:  'https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=900&auto=format&q=80',
+    food:    'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?w=900&auto=format&q=80',
+    leisure: 'https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=900&auto=format&q=80',
+    services:'https://images.unsplash.com/photo-1484154218962-a197022b5858?w=900&auto=format&q=80',
+    general: 'https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=900&auto=format&q=80',
+  }
+};
+const CAT_CODES = {beauty:'HBW',food:'HFD',leisure:'HTD',services:'HSV',general:'HGN',custom:'HCU'};
+
+// ── CSV ───────────────────────────────────────────────────────────────────────
+function parseCsv(text) {
+  const lines = text.trim().split(/\r?\n/);
+  if(lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h=>h.trim().toLowerCase());
+  return lines.slice(1).map(line=>{
+    const cols=[]; let cur='',inQ=false;
+    for(let ch of line){if(ch==='"'){inQ=!inQ;}else if(ch===','&&!inQ){cols.push(cur.trim());cur='';}else cur+=ch;}
+    cols.push(cur.trim());
+    const row={};
+    headers.forEach((h,i)=>row[h]=(cols[i]||'').replace(/^"|"$/g,'').trim());
+    return row;
+  }).filter(r=>Object.values(r).some(v=>v.length>0));
+}
+function loadCsv(file,type){if(!file)return;const r=new FileReader();r.onload=e=>{const rows=parseCsv(e.target.result);if(!rows.length){showToast('⚠ No valid rows found.');return;}csvStore[type]=rows;renderCsvPicker(type);persistLocal();};r.readAsText(file);}
+function handleDrop(e,type){e.preventDefault();gi(type+'-csv-zone').classList.remove('dragover');const f=e.dataTransfer.files[0];if(f)loadCsv(f,type);}
+function renderCsvPicker(type){
+  const rows=csvStore[type];
+  const keyCol=Object.keys(rows[0]).find(k=>k==='language'||k==='lang')||Object.keys(rows[0])[0];
+  const picker=gi(type+'-csv-picker');
+  picker.innerHTML=rows.map(r=>`<option value="${r[keyCol]}">${r[keyCol]}</option>`).join('');
+  gi(type+'-csv-ok').textContent=rows.length+' language'+(rows.length>1?'s':'')+' loaded';
+  gi(type+'-csv-zone').style.display='none';
+  gi(type+'-csv-loaded').classList.add('on');
+  applyCsv(type);
+}
+function applyCsv(type){
+  const rows=csvStore[type];
+  if(!rows.length) return;
+  const keyCol=Object.keys(rows[0]).find(k=>k==='language'||k==='lang')||Object.keys(rows[0])[0];
+  const lang=gi(type+'-csv-picker').value;
+  const row=rows.find(r=>r[keyCol]===lang);
+  if(!row) return;
+  // Check if we have a saved state for this combo first
+  const key = comboKey();
+  if(stateStore[key]) { loadCombo(key); renderBanners(); updateFilename(); return; }
+  // Otherwise fill from CSV
+  if(type==='hdr'){gi('t-line1').value=row.line1||'';gi('t-line2').value=row.line2||'';gi('t-line3').value=row.line3||'';gi('t-line4').value=row.line4||'';}
+  else{gi('s-headline').value=row.headline||'';gi('s-n1').value=row.n1||'';gi('s-l1').value=row.l1||'';gi('s-n2').value=row.n2||'';gi('s-l2').value=row.l2||'';gi('s-n3').value=row.n3||'';gi('s-l3').value=row.l3||'';gi('s-source').value=row.source||'';}
+  gi('fn-lang').value=cleanLang(lang);
+  renderBanners(); saveCombo(); updateFilename();
+}
+function clearCsv(type){csvStore[type]=[];gi(type+'-csv-zone').style.display='';gi(type+'-csv-loaded').classList.remove('on');gi(type+'-csv-zone').querySelector('input[type=file]').value='';persistLocal();}
+
+// ── MODE & CATEGORY ───────────────────────────────────────────────────────────
+function switchMode(m) {
+  // Save current combo before switching
+  saveCombo();
+  mode = m;
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',(m==='summer'&&i===0)||(m==='winter'&&i===1)));
+  applyPreset(m);
+  syncStatsMTColors();
+  renderBanners(); updateFilename();
+}
+
+function applyPreset(m) {
+  const p=PRESETS[m];
+  gi('t-line1').value=p.line1;gi('t-line2').value=p.line2;gi('t-line3').value=p.line3;gi('t-line4').value=p.line4;
+  gi('c-grad1').value=p.grad1;gi('c-grad2').value=p.grad2;gi('c-accent').value=p.accent;gi('t-bgcolor').value=p.bgcolor;
+  gi('t-category').value='beauty';gi('t-imgurl').value=CAT_IMGS[m]['beauty'];
+  gi('img-pos-x').value=50;gi('img-pos-y').value=50;gi('img-scale-w').value=100;gi('img-scale-h').value=100;
+  ['img-pos-x','img-pos-y','img-scale-w','img-scale-h'].forEach(syncNum);
+  gi('fade-start').value=38;gi('fade-end').value=78;gi('fade-opacity').value=100;
+  ['fade-start','fade-end','fade-opacity'].forEach(syncNum);
+  gi('s-headline').value=p.sHeadline;gi('s-n1').value=p.sN1;gi('s-l1').value=p.sL1;gi('s-n2').value=p.sN2;gi('s-l2').value=p.sL2;gi('s-n3').value=p.sN3;gi('s-l3').value=p.sL3;gi('s-source').value=p.sSource;
+}
+
+function selectCategory() {
+  const cat=gv('t-category');
+  const key=comboKey();
+  if(stateStore[key]) {
+    // Restore saved state for this category combo
+    loadCombo(key);
+    renderBanners();
+    reapplyMoreTools();
+    updateFilename();
+    return;
+  }
+  // No saved state — load default image, reset position
+  if(cat!=='custom') {
+    gi('t-imgurl').value=CAT_IMGS[mode][cat]||'';
+    gi('img-pos-x').value=50; gi('img-pos-y').value=50;
+    gi('img-scale-w').value=100; gi('img-scale-h').value=100;
+    syncNum('img-pos-x'); syncNum('img-pos-y');
+    syncNum('img-scale-w'); syncNum('img-scale-h');
+  }
+  renderBanners(); saveCombo(); updateFilename();
+}
+
+function onImgUrlChange(){ gi('t-category').value='custom'; onFieldChange(); }
+
+// ── IMAGE ─────────────────────────────────────────────────────────────────────
+function updateImagePosition() {
+  saveCombo();
+  const xRaw=parseInt(gv('img-pos-x')),yRaw=parseInt(gv('img-pos-y'));
+  const img=gi('hb-img'),banner=gi('preview-header');
+  const bw=banner.offsetWidth,bh=banner.offsetHeight;
+  const iw=img.naturalWidth||900,ih=img.naturalHeight||600;
+  const sw=parseInt(gv('img-scale-w'))/100,sh=parseInt(gv('img-scale-h'))/100;
+  const baseW=(bh/ih)*iw;
+  const renderedW=baseW*sw, renderedH=bh*sh;
+  const leftPx=-((xRaw/200)*(renderedW+bw)-bw);
+  const topPx=-((yRaw-100)/100)*(bh*0.2);
+  img.style.left=leftPx+'px'; img.style.top=topPx+'px';
+  img.style.width=renderedW+'px'; img.style.height=renderedH+'px';
+  saveCombo();
+}
+
+function onScaleW(){
+  syncNum('img-scale-w');
+  if(scaleLocked){
+    const v=gv('img-scale-w');
+    gi('img-scale-h').value=v; syncNum('img-scale-h');
+  }
+  updateImagePosition();
+}
+function onScaleH(){
+  syncNum('img-scale-h');
+  if(scaleLocked){
+    const v=gv('img-scale-h');
+    gi('img-scale-w').value=v; syncNum('img-scale-w');
+  }
+  updateImagePosition();
+}
+function toggleLock(){
+  scaleLocked=!scaleLocked;
+  const btn=gi('scale-lock');
+  btn.classList.toggle('locked',scaleLocked);
+  btn.textContent=scaleLocked?'🔒':'🔓';
+}
+
+// ── FADE ──────────────────────────────────────────────────────────────────────
+function updateFade(){
+  const s=parseInt(gv('fade-start')),e=parseInt(gv('fade-end')),op=parseInt(gv('fade-opacity'));
+  const g1=gv('c-grad1'),g2=gv('c-grad2'),mid=blendHex(g1,g2,0.4),a=op/100;
+  gi('hb-fade').style.background=`linear-gradient(to right,${hexToRgba(g1,a)} 0%,${hexToRgba(mid,a)} ${s}%,${hexToRgba(mid,a*0.45)} ${Math.round((s+e)/2)}%,${hexToRgba(mid,0)} ${e}%)`;
+  saveCombo();
+}
+
+// ── DIAGONAL ─────────────────────────────────────────────────────────────────
+function updateDiagonal() {
+  const pos   = parseInt(gv('diag-pos'));
+  const angle = parseInt(gv('diag-angle'));
+  const width = parseInt(gv('diag-width'));
+  const gap   = parseInt(gv('diag-gap'));
+  const d1 = gi('hb-diag-1');
+  const d2 = gi('hb-diag-2');
+  // Position: right offset for line 1, line 2 is gap px further right
+  d1.style.right  = pos + 'px';
+  d2.style.right  = (pos - gap) + 'px';
+  d1.style.width  = width + 'px';
+  d2.style.width  = Math.round(width * 0.65) + 'px';
+  d1.style.transform = `rotate(${angle}deg)`;
+  d2.style.transform = `rotate(${angle}deg)`;
+  saveCombo();
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+function renderBanners(){
+  // Header bg color
+  gi('preview-header').style.backgroundColor=gv('t-bgcolor');
+  // Header text
+  gi('hb-line1').textContent=gv('t-line1');
+  gi('hb-line2').textContent=gv('t-line2');
+  gi('hb-line3').textContent=gv('t-line3');
+  const l4=gi('hb-line4'); l4.textContent=gv('t-line4'); l4.style.color=gv('c-accent');
+  // Image
+  const img=gi('hb-img');
+  if(img.src!==gv('t-imgurl')){ img.src=gv('t-imgurl'); img.onload=updateImagePosition; }
+  updateImagePosition();
+  updateFade();
+  // Stats
+  const p=PRESETS[mode];
+  if(!gi('smt-panel').classList.contains('open')) gi('sb-bg').style.background=p.sbGrad;
+  const hl=gi('sb-headline'); hl.textContent=gv('s-headline');
+  ['1','2','3'].forEach(n=>{
+    const el=gi('sb-n'+n),txt=gv('s-n'+n);
+    el.textContent=txt;
+    if(!gi('smt-panel').classList.contains('open')) el.style.color=p.sbAccent;
+    el.classList.toggle('long',txt.length>7);
+    gi('sb-l'+n).textContent=gv('s-l'+n);
+  });
+  gi('sb-source').textContent=gv('s-source');
+  updateDiagonal();
+}
+
+// ── MORE TOOLS ────────────────────────────────────────────────────────────────
+function toggleMT(id){gi(id+'-btn').classList.toggle('open');gi(id+'-panel').classList.toggle('open');saveCombo();}
+
+function mtFs1(){gi('hb-line1').style.fontSize=gv('mt-fs1')+'px';saveCombo();}
+function mtFs2(){gi('hb-line2').style.fontSize=gv('mt-fs2')+'px';saveCombo();}
+function mtFs3(){gi('hb-line3').style.fontSize=gv('mt-fs3')+'px';saveCombo();}
+function mtFs4(){gi('hb-line4').style.fontSize=gv('mt-fs4')+'px';saveCombo();}
+function mtVgap(){const tb=gi('hb-text');tb.style.gap=gv('mt-vgap')+'px';tb.style.display='flex';tb.style.flexDirection='column';tb.style.justifyContent='center';saveCombo();}
+function mtPadl(){gi('hb-text').style.paddingLeft=gv('mt-padl')+'px';saveCombo();}
+function mtPanelw(){gi('hb-text').style.width=gv('mt-panelw')+'%';saveCombo();}
+function mtTextop(){gi('hb-text').style.opacity=gv('mt-textop')/100;saveCombo();}
+function mtDiag1(){gi('hb-diag-1').style.background=`rgba(255,255,255,${gv('mt-diag1')/100})`;saveCombo();}
+function mtDiag2(){gi('hb-diag-2').style.background=`rgba(255,255,255,${gv('mt-diag2')/100})`;saveCombo();}
+function smtFshl(){gi('sb-headline').style.fontSize=gv('smt-fshl')+'px';saveCombo();}
+function smtFsnum(){['sb-n1','sb-n2','sb-n3'].forEach(id=>gi(id).style.fontSize=gv('smt-fsnum')+'px');saveCombo();}
+function smtFslbl(){['sb-l1','sb-l2','sb-l3'].forEach(id=>gi(id).style.fontSize=gv('smt-fslbl')+'px');saveCombo();}
+function smtBg(){gi('sb-bg').style.background=`linear-gradient(135deg,${gv('smt-gbg1')} 0%,${gv('smt-gbg2')} 100%)`;saveCombo();}
+function smtChl(){gi('sb-headline').style.color=gv('smt-chl');saveCombo();}
+function smtCnum(){const c=gv('smt-cnum');['sb-n1','sb-n2','sb-n3'].forEach(id=>gi(id).style.color=c);saveCombo();}
+function smtGap(){gi('sb-row').style.gap=gv('smt-gap')+'px';saveCombo();}
+function smtVpad(){const v=gv('smt-vpad');gi('preview-stats').style.paddingTop=v+'px';gi('preview-stats').style.paddingBottom=v+'px';saveCombo();}
+function smtDividers(){const s=gv('smt-dividers')==='1';document.querySelectorAll('.sb-divider').forEach(d=>d.style.opacity=s?'1':'0');saveCombo();}
+
+function syncStatsMTColors(){
+  const p=PRESETS[mode];
+  if(p.sbAccent==='#FFD600'){gi('smt-gbg1').value='#FF4E50';gi('smt-gbg2').value='#FFC107';gi('smt-cnum').value='#FFD600';}
+  else{gi('smt-gbg1').value='#0B2E84';gi('smt-gbg2').value='#00ACC1';gi('smt-cnum').value='#00E5FF';}
+  gi('smt-chl').value='#ffffff';
+}
+
+// Reapply all more-tools from current slider values (used on loadCombo)
+function reapplyMoreTools(){
+  mtFs1();mtFs2();mtFs3();mtFs4();mtVgap();mtPadl();mtPanelw();mtTextop();mtDiag1();mtDiag2();
+  smtFshl();smtFsnum();smtFslbl();smtBg();smtChl();smtCnum();smtGap();smtVpad();smtDividers();
+}
+
+// ── FILENAME ──────────────────────────────────────────────────────────────────
+function updateFilename(){
+  const size=t=>t==='header'?'600x300':t==='header-small'?'480x250':'480x145';
+  const bt=t=>t.startsWith('header')?'HeaderBanner':'StatsBanner';
+  const send=(gv('fn-send')||'Send1').trim(),lang=(gv('fn-lang')||'ES').trim();
+  const cat=CAT_CODES[gv('t-category')]||'HGN';
+  gi('filename-preview').textContent=`${size('header')}-HeaderBanner-${cat}-${send}-${lang}.png`;
+  gi('filename-stats-preview').textContent=`${size('stats')}-StatsBanner-${send}-${lang}.png`;
+}
+
+// ── EXPORT ────────────────────────────────────────────────────────────────────
+async function exportBanner(type){
+  const isSmall=type==='header-small';
+  const elId=(type==='header'||isSmall)?'preview-header':'preview-stats';
+  const btnId=type==='header'?'btn-export-header':type==='header-small'?'btn-export-header-small':'btn-export-stats';
+  const el=gi(elId),btn=gi(btnId),orig=btn.textContent;
+  btn.textContent='Generating…';btn.classList.add('loading');
+  try{
+    const canvas=await html2canvas(el,{scale:2,useCORS:true,allowTaint:true,backgroundColor:null,logging:false,width:el.offsetWidth,height:el.offsetHeight});
+    let final=canvas;
+    if(isSmall){final=document.createElement('canvas');final.width=480;final.height=250;final.getContext('2d').drawImage(canvas,0,0,480,250);}
+    const send=(gv('fn-send')||'Send1').trim(),lang=(gv('fn-lang')||'ES').trim();
+    const cat=CAT_CODES[gv('t-category')]||'HGN';
+    const fn=type==='stats'?`480x145-StatsBanner-${send}-${lang}.png`:isSmall?`480x250-HeaderBanner-${cat}-${send}-${lang}.png`:`600x300-HeaderBanner-${cat}-${send}-${lang}.png`;
+    const link=document.createElement('a');link.download=fn;link.href=final.toDataURL('image/png');link.click();
+    showToast('✓ '+fn+' downloaded','#4ade80');
+  }catch(e){showToast('⚠ Export error. Check image CORS.','#ff6b6b');}
+  btn.textContent=orig;btn.classList.remove('loading');
+}
+
+// ── SAVE / LOAD SESSION ───────────────────────────────────────────────────────
+function downloadSession(){
+  saveCombo();
+  const data={version:2,mode,stateStore,csvStore,scaleLocked};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const link=document.createElement('a');link.download=`imc-session-${Date.now()}.json`;link.href=URL.createObjectURL(blob);link.click();
+  showToast('✓ Session downloaded','#4ade80');
+}
+
+function loadSessionFile(file){
+  if(!file)return;
+  const r=new FileReader();
+  r.onload=e=>{
+    try{
+      const d=JSON.parse(e.target.result);
+      if(!d.version)throw new Error();
+      stateStore=d.stateStore||{};
+      csvStore=d.csvStore||{hdr:[],stats:[]};
+      scaleLocked=d.scaleLocked!==undefined?d.scaleLocked:true;
+      gi('scale-lock').classList.toggle('locked',scaleLocked);
+      gi('scale-lock').textContent=scaleLocked?'🔒':'🔓';
+      // Restore CSVs UI
+      ['hdr','stats'].forEach(type=>{if(csvStore[type]&&csvStore[type].length)renderCsvPicker(type);});
+      // Switch to saved mode
+      mode=d.mode||'summer';
+      document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',(mode==='summer'&&i===0)||(mode==='winter'&&i===1)));
+      const key=comboKey();
+      if(stateStore[key]) loadCombo(key);
+      else applyPreset(mode);
+      renderBanners(); reapplyMoreTools(); updateFilename();
+      showToast('✓ Session loaded','#4ade80');
+    }catch(err){showToast('⚠ Invalid session file','#ff6b6b');}
+  };
+  r.readAsText(file);
+}
+
+// ── CLEAR LOCAL STORAGE ──────────────────────────────────────────────────────
+function clearLocalStorage(){
+  if(!confirm('Clear all saved states? This cannot be undone.')) return;
+  localStorage.removeItem('imc_state');
+  stateStore={};
+  applyPreset(mode);
+  syncStatsMTColors();
+  renderBanners();
+  updateFilename();
+  showToast('✓ Saved state cleared','#4ade80');
+}
+
+// ── LOCAL STORAGE RESTORE ─────────────────────────────────────────────────────
+function restoreLocal(){
+  try{
+    const raw=localStorage.getItem('imc_state');
+    if(!raw)return false;
+    const d=JSON.parse(raw);
+    if(!d.version2) return false; // reject old corrupted state
+    stateStore=d.stateStore||{};
+    csvStore=d.csvStore||{hdr:[],stats:[]};
+    ['hdr','stats'].forEach(type=>{if(csvStore[type]&&csvStore[type].length)renderCsvPicker(type);});
+    mode=d.mode||'summer';
+    document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',(mode==='summer'&&i===0)||(mode==='winter'&&i===1)));
+    const key=comboKey();
+    if(stateStore[key]){loadCombo(key);}
+    else{applyPreset(mode);}
+    return true;
+  }catch(e){return false;}
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+(function init(){
+  // Try to restore from localStorage
+  const restored = restoreLocal();
+  if(!restored) applyPreset('summer');
+  syncStatsMTColors();
+  renderBanners();
+  if(restored) reapplyMoreTools();
+  updateFilename();
+})();
+
+// ── LANGUAGE GROUPS ───────────────────────────────────────────────────────────
+// Maps CSV language values → canonical filename lang code
+const LANG_GROUPS = {
+  'NA':                        'EN',
+  'UK (proofread)':            'EN',
+  'AE (proofread)':            'EN',
+  'IE (proofread)':            'EN',
+  'AU WINTER 2026 (proofread)':'EN',
+  'FR (proofread)':            'FR',
+  'BEFR - (proofread)':        'FR',
+  'ES (proofread)':            'ES',
+  'DE (proofread)':            'DE',
+  'PL (proofread)':            'PL',
+  'NL (proofread)':            'NL',
+  'BENL - (proofread)':        'NL',
+};
+
+// Get unique header langs — one per canonical code, first match wins
+function getUniqueHeaderLangs() {
+  if (!csvStore.hdr.length) return [];
+  const keyCol = Object.keys(csvStore.hdr[0]).find(k=>k==='language'||k==='lang') || Object.keys(csvStore.hdr[0])[0];
+  const seen = new Set();
+  const result = [];
+  for (const row of csvStore.hdr) {
+    const rawLang = row[keyCol];
+    const canon = LANG_GROUPS[rawLang] || cleanLang(rawLang);
+    if (!seen.has(canon)) {
+      seen.add(canon);
+      result.push({ rawLang, canon, row });
+    }
+  }
+  return result;
+}
+
+// Get all stats langs (one per row)
+function getAllStatsLangs() {
+  if (!csvStore.stats.length) return [];
+  const keyCol = Object.keys(csvStore.stats[0]).find(k=>k==='language'||k==='lang') || Object.keys(csvStore.stats[0])[0];
+  return csvStore.stats.map(row => ({
+    rawLang: row[keyCol],
+    canon: LANG_GROUPS[row[keyCol]] || cleanLang(row[keyCol]),
+    row
+  }));
+}
+
+function setProgress(msg) {
+  const el = gi('batch-progress');
+  el.style.display = 'block';
+  el.textContent = msg;
+}
+
+function hideProgress() {
+  gi('batch-progress').style.display = 'none';
+}
+
+// Apply a header CSV row to the banner fields
+function applyHdrRow(row) {
+  gi('t-line1').value = row.line1 || '';
+  gi('t-line2').value = row.line2 || '';
+  gi('t-line3').value = row.line3 || '';
+  gi('t-line4').value = row.line4 || '';
+  renderBanners();
+}
+
+// Apply a stats CSV row to the banner fields
+function applyStatsRow(row) {
+  gi('s-headline').value = row.headline || '';
+  gi('s-n1').value = row.n1 || ''; gi('s-l1').value = row.l1 || '';
+  gi('s-n2').value = row.n2 || ''; gi('s-l2').value = row.l2 || '';
+  gi('s-n3').value = row.n3 || ''; gi('s-l3').value = row.l3 || '';
+  gi('s-source').value = row.source || '';
+  renderBanners();
+}
+
+async function captureCanvas(elId, w, h) {
+  const el = gi(elId);
+  const canvas = await html2canvas(el, {
+    scale: 2, useCORS: true, allowTaint: true,
+    backgroundColor: null, logging: false,
+    width: el.offsetWidth, height: el.offsetHeight,
+  });
+  if (w && h && (w !== el.offsetWidth || h !== el.offsetHeight)) {
+    const final = document.createElement('canvas');
+    final.width = w; final.height = h;
+    final.getContext('2d').drawImage(canvas, 0, 0, w, h);
+    return final;
+  }
+  return canvas;
+}
+
+async function batchExportAll() {
+  const hdrLangs = getUniqueHeaderLangs();
+  const statsLangs = getAllStatsLangs();
+
+  if (!hdrLangs.length && !statsLangs.length) {
+    showToast('⚠ Load CSV files first', '#ff6b6b'); return;
+  }
+
+  const btn = gi('btn-batch-all');
+  btn.textContent = 'Working...'; btn.classList.add('loading');
+
+  const zip = new JSZip();
+  const send = (gv('fn-send') || 'Send1').trim();
+  const cat = CAT_CODES[gv('t-category')] || 'HGN';
+
+  // Save current field values to restore later
+  const snapshot = {};
+  FIELD_IDS.forEach(id => { const el = gi(id); if(el) snapshot[id] = el.value; });
+
+  let total = hdrLangs.length * 2 + statsLangs.length;
+  let done = 0;
+
+  // ── HEADER BANNERS ──────────────────────────────────────────────────────────
+  for (const { rawLang, canon, row } of hdrLangs) {
+    applyHdrRow(row);
+    await new Promise(r => setTimeout(r, 120)); // let DOM settle
+
+    setProgress(`Header ${canon} (${done+1}/${total})...`);
+
+    // 600×300
+    const c1 = await captureCanvas('preview-header');
+    zip.file(`600x300-HeaderBanner-${cat}-${send}-${canon}.png`, c1.toDataURL('image/png').split(',')[1], {base64:true});
+    done++;
+
+    // 480×250
+    setProgress(`Header ${canon} 480×250 (${done+1}/${total})...`);
+    const c2 = await captureCanvas('preview-header', 480, 250);
+    zip.file(`480x250-HeaderBanner-${cat}-${send}-${canon}.png`, c2.toDataURL('image/png').split(',')[1], {base64:true});
+    done++;
+  }
+
+  // ── STATS BANNERS ───────────────────────────────────────────────────────────
+  for (const { rawLang, canon, row } of statsLangs) {
+    applyStatsRow(row);
+    await new Promise(r => setTimeout(r, 120));
+
+    const statsLang = LANG_GROUPS[rawLang] || cleanLang(rawLang);
+    setProgress(`Stats ${statsLang} (${done+1}/${total})...`);
+
+    const c3 = await captureCanvas('preview-stats', 480, 145);
+    zip.file(`480x145-StatsBanner-${send}-${statsLang}.png`, c3.toDataURL('image/png').split(',')[1], {base64:true});
+    done++;
+  }
+
+  // Restore original fields
+  FIELD_IDS.forEach(id => { const el = gi(id); if(el && snapshot[id] !== undefined) el.value = snapshot[id]; });
+  renderBanners();
+
+  // Generate ZIP
+  setProgress('Zipping files...');
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const link = document.createElement('a');
+  link.download = `imc-banners-${send}-${Date.now()}.zip`;
+  link.href = URL.createObjectURL(blob);
+  link.click();
+
+  hideProgress();
+  btn.textContent = '↓ Download All (ZIP)';
+  btn.classList.remove('loading');
+  showToast(`✓ ${done} banners exported`, '#4ade80');
+}
+
+</script>
+</body>
+</html>
   'PL (proofread)':            'PL',
   'NL (proofread)':            'NL',
   'BENL - (proofread)':        'NL',
