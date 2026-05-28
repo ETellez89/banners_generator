@@ -186,16 +186,16 @@ body{background:var(--bg);color:var(--text);font-family:'Montserrat',Arial,sans-
       </div>
       <div class="field"><label>Image URL</label><input type="text" id="t-imgurl" oninput="onImgUrlChange()"></div>
       <div class="field"><label>Background color</label><input type="color" id="t-bgcolor" value="#EF7100" oninput="onFieldChange()" class="color-input"></div>
-      <div class="field"><label>Position X (← →)</label><div class="srow"><input type="range" min="0" max="200" step="1" id="img-pos-x" value="50" oninput="syncNum('img-pos-x');updateImagePosition()"><input type="number" id="img-pos-x-n" value="50" min="0" max="200" oninput="syncRange('img-pos-x');updateImagePosition()"></div></div>
-      <div class="field"><label>Position Y (↑ ↓)</label><div class="srow"><input type="range" min="0" max="200" step="1" id="img-pos-y" value="50" oninput="syncNum('img-pos-y');updateImagePosition()"><input type="number" id="img-pos-y-n" value="50" min="0" max="200" oninput="syncRange('img-pos-y');updateImagePosition()"></div></div>
+      <div class="field"><label>Position X (← →)</label><div class="srow"><input type="range" min="0" max="400" step="1" id="img-pos-x" value="50" oninput="syncNum('img-pos-x');updateImagePosition()"><input type="number" id="img-pos-x-n" value="50" min="0" max="9999" oninput="syncRange('img-pos-x');updateImagePosition()"></div></div>
+      <div class="field"><label>Position Y (↑ ↓)</label><div class="srow"><input type="range" min="0" max="400" step="1" id="img-pos-y" value="50" oninput="syncNum('img-pos-y');updateImagePosition()"><input type="number" id="img-pos-y-n" value="50" min="0" max="9999" oninput="syncRange('img-pos-y');updateImagePosition()"></div></div>
       <div class="mt-div"></div>
       <div class="mt-lbl">Image scale</div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
         <span style="font-size:10px;color:var(--text-muted);font-weight:700;">Proportional lock</span>
         <button class="lock-btn locked" id="scale-lock" onclick="toggleLock()">🔒</button>
       </div>
-      <div class="field"><label>Scale W (%)</label><div class="srow"><input type="range" min="50" max="300" step="1" id="img-scale-w" value="100" oninput="syncNum('img-scale-w');onScaleW()"><input type="number" id="img-scale-w-n" value="100" min="50" max="300" oninput="syncRange('img-scale-w');onScaleW()"></div></div>
-      <div class="field"><label>Scale H (%)</label><div class="srow"><input type="range" min="50" max="300" step="1" id="img-scale-h" value="100" oninput="syncNum('img-scale-h');onScaleH()"><input type="number" id="img-scale-h-n" value="100" min="50" max="300" oninput="syncRange('img-scale-h');onScaleH()"></div></div>
+      <div class="field"><label>Scale W (%)</label><div class="srow"><input type="range" min="50" max="500" step="1" id="img-scale-w" value="100" oninput="syncNum('img-scale-w');onScaleW()"><input type="number" id="img-scale-w-n" value="100" min="50" max="9999" oninput="syncRange('img-scale-w');onScaleW()"></div></div>
+      <div class="field"><label>Scale H (%)</label><div class="srow"><input type="range" min="50" max="500" step="1" id="img-scale-h" value="100" oninput="syncNum('img-scale-h');onScaleH()"><input type="number" id="img-scale-h-n" value="100" min="50" max="9999" oninput="syncRange('img-scale-h');onScaleH()"></div></div>
     </div>
   </div>
 
@@ -214,7 +214,7 @@ body{background:var(--bg);color:var(--text);font-family:'Montserrat',Arial,sans-
       <div class="field"><label>Solid opacity %</label><div class="srow"><input type="range" min="50" max="100" step="1" id="fade-opacity" value="100" oninput="syncNum('fade-opacity');updateFade()"><input type="number" id="fade-opacity-n" value="100" min="50" max="100" oninput="syncRange('fade-opacity');updateFade()"></div></div>
       <div class="mt-div"></div>
       <div class="mt-lbl">Diagonal line</div>
-      <div class="field"><label>Position X (px from right)</label><div class="srow"><input type="range" min="-100" max="400" step="1" id="diag-pos" value="170" oninput="syncNum('diag-pos');updateDiagonal()"><input type="number" id="diag-pos-n" value="170" min="-100" max="400" oninput="syncRange('diag-pos');updateDiagonal()"></div></div>
+      <div class="field"><label>Position X (px from right)</label><div class="srow"><input type="range" min="-200" max="600" step="1" id="diag-pos" value="170" oninput="syncNum('diag-pos');updateDiagonal()"><input type="number" id="diag-pos-n" value="170" min="-9999" max="9999" oninput="syncRange('diag-pos');updateDiagonal()"></div></div>
       <div class="field"><label>Angle (degrees)</label><div class="srow"><input type="range" min="0" max="180" step="1" id="diag-angle" value="14" oninput="syncNum('diag-angle');updateDiagonal()"><input type="number" id="diag-angle-n" value="14" min="0" max="180" oninput="syncRange('diag-angle');updateDiagonal()"></div></div>
       <div class="field"><label>Width (px)</label><div class="srow"><input type="range" min="4" max="80" step="1" id="diag-width" value="26" oninput="syncNum('diag-width');updateDiagonal()"><input type="number" id="diag-width-n" value="26" min="4" max="80" oninput="syncRange('diag-width');updateDiagonal()"></div></div>
       <div class="field"><label>Gap between lines (px)</label><div class="srow"><input type="range" min="0" max="60" step="1" id="diag-gap" value="24" oninput="syncNum('diag-gap');updateDiagonal()"><input type="number" id="diag-gap-n" value="24" min="0" max="60" oninput="syncRange('diag-gap');updateDiagonal()"></div></div>
@@ -372,7 +372,16 @@ function blendHex(h1,h2,t){const mix=(a,b)=>Math.round(a*(1-t)+b*t);return '#'+[
 function showToast(msg,col){const t=gi('toast');gi('toast-msg').textContent=msg;t.style.borderColor=col||'var(--border)';t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000);}
 function cleanLang(s){return s.replace(/\s*\(.*?\)/g,'').replace(/[-\s]+/g,'_').trim();}
 function syncNum(id){const n=gi(id+'-n');if(n)n.value=gi(id).value;}
-function syncRange(id){const n=gi(id+'-n'),r=gi(id);if(!n||!r)return;let v=parseFloat(n.value);const mn=parseFloat(r.min||0),mx=parseFloat(r.max||100);v=Math.max(mn,Math.min(mx,isNaN(v)?mn:v));r.value=v;n.value=v;}
+function syncRange(id){
+  const n=gi(id+'-n'),r=gi(id);
+  if(!n||!r)return;
+  let v=parseFloat(n.value);
+  if(isNaN(v))v=parseFloat(r.min||0);
+  // Clamp slider (has real min/max) but allow number input to go beyond
+  const sliderMin=parseFloat(r.min||0),sliderMax=parseFloat(r.max||100);
+  r.value=Math.max(sliderMin,Math.min(sliderMax,v)); // slider clamped
+  n.value=v; // number input keeps the real value even if beyond slider range
+}
 function syncAllNums(){RANGE_IDS.forEach(syncNum);}
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
@@ -481,7 +490,9 @@ function clearCsv(type){csvStore[type]=[];gi(type+'-csv-zone').style.display='';
 
 // ── MODE & CATEGORY ───────────────────────────────────────────────────────────
 function switchMode(m){
-  saveCombo();mode=m;
+  if(m===mode) return;
+  saveCombo(); // save current mode+category state BEFORE switching
+  mode=m;
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',(m==='summer'&&i===0)||(m==='winter'&&i===1)));
   const key=comboKey();
   if(stateStore[key]){loadCombo(key);}else{applyPreset(m);}
