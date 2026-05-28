@@ -372,6 +372,8 @@ function blendHex(h1,h2,t){const mix=(a,b)=>Math.round(a*(1-t)+b*t);return '#'+[
 function showToast(msg,col){const t=gi('toast');gi('toast-msg').textContent=msg;t.style.borderColor=col||'var(--border)';t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000);}
 function cleanLang(s){return s.replace(/\s*\(.*?\)/g,'').replace(/[-\s]+/g,'_').trim();}
 function syncNum(id){const n=gi(id+'-n');if(n)n.value=gi(id).value;}
+// Read the true value — prefers number input over range (allows beyond-max values)
+function trueVal(id){const n=gi(id+'-n');if(n&&n.value!=='')return parseFloat(n.value);return parseFloat(gi(id).value);}
 function syncRange(id){
   const n=gi(id+'-n'),r=gi(id);
   if(!n||!r)return;
@@ -515,20 +517,20 @@ function onImgUrlChange(){gi('t-category').value='custom';onFieldChange();}
 
 // ── IMAGE ─────────────────────────────────────────────────────────────────────
 function updateImagePosition(){
-  const xRaw=parseInt(gv('img-pos-x')),yRaw=parseInt(gv('img-pos-y'));
+  const xRaw=trueVal('img-pos-x'),yRaw=trueVal('img-pos-y');
   const img=gi('hb-img'),banner=gi('preview-header');
   const bw=banner.offsetWidth,bh=banner.offsetHeight;
   const iw=img.naturalWidth||900,ih=img.naturalHeight||600;
-  const sw=parseInt(gv('img-scale-w'))/100,sh=parseInt(gv('img-scale-h'))/100;
+  const sw=trueVal('img-scale-w')/100,sh=trueVal('img-scale-h')/100;
   const baseW=(bh/ih)*iw;
   const renderedW=baseW*sw,renderedH=bh*sh;
-  img.style.left=-((xRaw/200)*(renderedW+bw)-bw)+'px';
-  img.style.top=-((yRaw-100)/100)*(bh*0.2)+'px';
+  img.style.left=-((xRaw/400)*(renderedW+bw)-bw)+'px';
+  img.style.top=-((yRaw-100)/100)*(bh*0.3)+'px';
   img.style.width=renderedW+'px';img.style.height=renderedH+'px';
   saveCombo();
 }
-function onScaleW(){syncNum('img-scale-w');if(scaleLocked){gi('img-scale-h').value=gv('img-scale-w');syncNum('img-scale-h');}updateImagePosition();}
-function onScaleH(){syncNum('img-scale-h');if(scaleLocked){gi('img-scale-w').value=gv('img-scale-h');syncNum('img-scale-w');}updateImagePosition();}
+function onScaleW(){syncNum('img-scale-w');if(scaleLocked){gi('img-scale-h').value=trueVal('img-scale-w');gi('img-scale-h-n')&&(gi('img-scale-h-n').value=trueVal('img-scale-w'));}updateImagePosition();}
+function onScaleH(){syncNum('img-scale-h');if(scaleLocked){gi('img-scale-w').value=trueVal('img-scale-h');gi('img-scale-w-n')&&(gi('img-scale-w-n').value=trueVal('img-scale-h'));}updateImagePosition();}
 function toggleLock(){scaleLocked=!scaleLocked;const btn=gi('scale-lock');btn.classList.toggle('locked',scaleLocked);btn.textContent=scaleLocked?'🔒':'🔓';}
 
 // ── FADE ──────────────────────────────────────────────────────────────────────
